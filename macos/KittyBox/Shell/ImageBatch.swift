@@ -89,6 +89,8 @@ struct BatchRow: View {
   let doneVerb: String
   let removable: Bool
   let remove: () -> Void
+  /// 没做成的那行后面跟一个按钮（Gemini 认不出时「改用画笔擦除」）
+  var onFailure: (title: String, action: (URL) -> Void)?
 
   var body: some View {
     HStack(spacing: 10) {
@@ -124,8 +126,14 @@ struct BatchRow: View {
           .buttonStyle(.link).font(.caption)
       }
     case .failed(let reason):
-      Label(reason, systemImage: "exclamationmark.triangle.fill").font(.caption)
-        .foregroundStyle(.red)
+      HStack(spacing: 8) {
+        Label(reason, systemImage: "exclamationmark.triangle.fill").font(.caption)
+          .foregroundStyle(.red)
+        if let onFailure {
+          Button(onFailure.title) { onFailure.action(item.source) }.buttonStyle(.link).font(
+            .caption)
+        }
+      }
     }
   }
 }

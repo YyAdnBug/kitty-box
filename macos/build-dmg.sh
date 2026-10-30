@@ -3,7 +3,7 @@
 # 发布：github.com/YyAdnBug/kitty-box，tag macos-v<版本>、正式 release，附两个文件：DMG（首次安装）和
 #   <名字>_<版本>_arm64.zip（以后 App 内更新下载它，文件名后缀 _arm64.zip 别改）。发布说明固定附「系统设置 › 隐私与安全 ›
 #   仍要打开」步骤（只有第一次安装要）。
-# 先跑 ./fetch-vendor.sh：随包的 7zz 不入库，缺了 archive 会失败。
+# 先跑 ./fetch-vendor.sh：随包的 7zz 和 LaMa 模型不入库，缺了 archive 会失败。
 # DMG 窗口：背景 Config/dmg-background.tiff（设计区 600×400 在左上角：左 App、右「应用程序」、中间箭头，底下写着「仍要打开」的路径；
 #   整张 2560×1600 pt、@1x + @2x，窗口拉大也不露白；由 swift macos/brand-icons.swift 生成，字标写死 Kitty Box，改名要改那个脚本重跑），
 #   用 hdiutil 做可写映像 + AppleScript 让访达摆位置（隐藏的 .background 挪到默认窗口外、删掉 .fseventsd），再压成只读。
@@ -28,6 +28,8 @@ lipo -archs "$APP/Contents/MacOS/$NAME"
 codesign --verify --strict \
   -R '=anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' "$APP/Contents/MacOS/7zz"
 [[ "$(codesign -dv "$APP/Contents/MacOS/7zz" 2>&1)" == *"(runtime)"* ]] || { echo "7zz 没开强化运行时"; exit 1; }
+# 画笔擦除的 LaMa 模型（fetch-vendor.sh 拉、Xcode 的「Embed LaMa」拷进来）
+[[ -f "$APP/Contents/Resources/LaMa.mlmodelc/weights/weight.bin" ]] || { echo "LaMa 模型没打进包"; exit 1; }
 ditto "$APP" "$OUT/dmg/$NAME.app" && ln -s /Applications "$OUT/dmg/Applications"
 DMG="$OUT/${NAME}_${VERSION}_arm64.dmg"
 if [[ "${DMG_LAYOUT:-1}" == 0 ]]; then

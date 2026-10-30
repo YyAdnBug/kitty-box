@@ -1,5 +1,6 @@
-// 去水印页（D1–D7）：顶上三个模式——Gemini 角标（一批图一张一张去）、画笔擦除（M4 加）、视频台标（VideoMarkView）。
-// 拖进来的是视频就切到视频台标，是图片就切到 Gemini 角标。结果都是「原名-去水印」放在原文件旁边，不碰原文件。
+// 去水印页（D1–D7）：顶上三个模式——Gemini 角标（一批图一张一张去）、画笔擦除（EraseCanvas）、视频台标（VideoMarkView）。
+// 拖进来的是视频就切到视频台标；是图片就进 Gemini 角标，正停在画笔擦除时进画笔擦除（一次一张）。Gemini 认不出的那行能一键
+// 改用画笔擦除。结果都是「原名-去水印」放在原文件旁边，不碰原文件。
 
 import AppKit
 import Observation
@@ -21,12 +22,15 @@ import UniformTypeIdentifiers
 
   var mode = Mode.gemini
   let gemini = ImageBatch()
+  let erase = EraseModel()
   let video = VideoMarkModel()
 
-  /// 图片进 Gemini 角标；视频（一次一段，取第一段）进视频台标，两样都有时停在视频台标
+  /// 图片进 Gemini 角标（正停在画笔擦除时进画笔擦除，取第一张）；视频（取第一段）进视频台标，两样都有时停在视频台标
   func add(_ urls: [URL]) {
     let images = urls.filter(ImageConverter.canRead)
-    if !images.isEmpty {
+    if mode == .erase, let first = images.first {
+      erase.load(first)
+    } else if !images.isEmpty {
       gemini.add(images)
       mode = .gemini
     }
@@ -34,6 +38,12 @@ import UniformTypeIdentifiers
       video.load(first)
       mode = .video
     }
+  }
+
+  /// Gemini 认不出的图交给画笔擦除
+  func handOff(_ url: URL) {
+    erase.load(url)
+    mode = .erase
   }
 }
 
@@ -51,10 +61,8 @@ struct WatermarkView: View {
       .padding(.vertical, 12)
       Divider()
       switch model.mode {
-      case .gemini: GeminiSection(batch: model.gemini)
-      case .erase:
-        ContentUnavailableView(
-          "画笔擦除", systemImage: "paintbrush.pointed", description: Text("下一批加上：涂哪擦哪，本机的模型补全。"))
+      case .gemini: GeminiSection(batch: model.gemini, handOff: model.handOff)
+      case .erase: EraseCanvas(model: model.erase)
       case .video: VideoMarkView(model: model.video)
       }
     }
@@ -70,6 +78,7 @@ struct WatermarkView: View {
 /// Gemini 角标：一批图，点「去掉角标」一张一张去；认不出的那行写「没认出 Gemini 角标」
 private struct GeminiSection: View {
   @Bindable var batch: ImageBatch
+  let handOff: (URL) -> Void
   @State private var choosing = false
 
   var body: some View {
@@ -80,7 +89,10 @@ private struct GeminiSection: View {
         Spacer()
       } else {
         List(batch.items) { item in
-          BatchRow(item: item, doneVerb: "存成", removable: !batch.running) { batch.remove(item.id) }
+          BatchRow(
+            item: item, doneVerb: "存成", removable: !batch.running,
+            remove: { batch.remove(item.id) },
+            onFailure: ("改用画笔擦除", handOff))
         }
       }
       Divider()

@@ -16,7 +16,7 @@
 | 随包的东西 | 版本 / 来源 | 许可 | 怎么进包 |
 |---|---|---|---|
 | `7zz` | 7-Zip 26.05，`github.com/ip7z/7zip/releases/download/26.05/7z2605-mac.tar.xz`，SHA256 `12ef6830317743cfd3f0ab1724bde43fcc270d8b6d8564f8c12c2a2b7f993570`（与 GitHub release 的 digest 一致） | LGPL-2.1 + unRAR 限制 | 不入库（E3）：`fetch-vendor.sh` 按 SHA256 拉下来，原包是 universal、没签名，脚本里 `lipo -thin arm64` 后放到被忽略的 `Vendor/7zz`；Copy Files 到 Executables 并勾 Code Sign On Copy；`7zz-License.txt` 进 Resources |
-| LaMa Core ML 模型 | Hugging Face 上 CoreMLaMa 转好的 800×800 版，M4 动手前选定一份并固定 SHA256 | Apache-2.0 | 约 100 MB，不入库：同一个 `fetch-vendor.sh` 拉，`build-dmg.sh` 打包前检查 |
+| LaMa Core ML 模型 | Hugging Face `mlboydaisuke/LaMa-CoreML` 的 revision `5ed76e3`（FP32，输入 800×800 的 BGRA 图 + 8 位灰度遮罩）；Manifest.json / model.mlmodel / weight.bin 三个文件各自固定 SHA256 | Apache-2.0 | 约 207 MB（编译后），不入库：`fetch-vendor.sh` 拉、校验、`coremlcompiler` 编译成 `Vendor/LaMa.mlmodelc`，Xcode 的「Embed LaMa」拷进 Resources；许可证全文 `Resources/lama-LICENSE.txt` 入库 |
 | Gemini α 图 | GargantuaX/gemini-watermark-remover commit `ddd67a7` 的 `src/core/embeddedAlphaMaps.js` 里内嵌的 4 张（36-v2、48、96、96-20260520），原样解成 Float32 小端 | MIT | 入库：`Resources/gemini-alpha-*.bin`（共约 88 KB），附 `gemini-watermark-LICENSE.txt` |
 
 ## 2. 各功能的做法
@@ -83,10 +83,13 @@
 - 上游的残影修补、FDnCNN 降噪、深色描边变体、多层叠加、自适应搜位置都不移植（`ponytail:`）。Gemini 出了新版本认不出时，从上游同步 α 图和候选位置。
 - **还没拿真的 Gemini 图验过**，单测用的是照 Gemini 公式合成的星标。
 
-### 框选擦除
-- 画笔涂出遮罩，支持撤销。
-- 模型输入固定为 800×800。在遮罩外接框四周加一圈边距，裁成正方形，缩放到 800，推理后再缩放回原尺寸，只把遮罩里的像素贴回原图，所以原图分辨率不变。
-- 推理用 `@concurrent`，计算单元交给 Core ML 自己选。
+### 画笔擦除
+- **模型选型（M4，2026-10-30 实测）**：比了两份。`Jia-Liu/big-lama-coreml` 只有 95 MB，但实际是半精度，补出来的地方明显偏色；`mlboydaisuke/LaMa-CoreML`（FP32，约 207 MB）几乎看不出来，速度一样。选后者，**App 因此约 225 MB，比拍板时估的 110 MB 大一倍**（D2 仍是随包）。
+- 计算单元只用 CPU + GPU（`.cpuAndGPU`）：800×800 一次约 0.7 s；`.all` 带上神经网络引擎反而 3–4 s，第一次还要先编译将近两分钟。模型第一次用时加载（约 1 s），之后留在 `Inpainter` 这个 actor 里。
+- 画笔涂出遮罩（笔画存原图像素坐标，笔刷粗细按屏幕上看着的换算），⌘Z 先撤笔画、再撤上一次擦除；擦完能接着涂；满意了「存成」另存「原名-去水印」（同格式、照片信息带过去、方向转正）。
+- 补：遮罩外接框四周留一圈上下文（至少 32，多则框边长的一半），裁一块尽量正方形、至少 256、不出图，拉成 800×800 推理，放大回那块的尺寸，只按遮罩贴回原图，原图分辨率不变。模型自己会把遮罩外原样带过，所以输入不用先清零。
+- 贴回用的遮罩边缘按缩放比例羽化（σ = 块宽 / 800 × 3，至少 1.5）：硬边贴回去在真照片上能看出一圈轮廓。涂得很大（块超过 800、要缩小）时补出来的地方少了原图的细颗粒，仔细看仍有一圈很淡的轮廓（`ponytail:`，要更好再加颗粒匹配）。
+- Gemini 认不出的那一行有「改用画笔擦除」，点了切到画笔擦除并载入那张图；没有替你预先框好右下角（星标的位置随版本变，框大了会多擦）。
 
 ### 视频固定台标
 - 在第一帧（`AVAssetImageGenerator`，按视频方向转正）上拖出台标，可以框几处，框角的 × 删掉一处。框存第一帧的像素坐标。
@@ -111,7 +114,7 @@
 | `Shell/` | `HomeView.swift`（四格首页，照 Kitty Tools 的 HomePanel；文件拖到哪一格交给哪个工具）、`Navigator.swift`（首页导航 + 拖进来的文件往哪送：全是压缩包就解压，里面有图片就回首页、顶上一条提示让你点一格交给它，别的交给打包；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`ImageBatch.swift`（一批图一张一张处理的列表模型和一行的样子：图片转换和 Gemini 角标共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
 | `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、解完的清理和挪位置）、`PackView.swift`（打包页和它的 PackModel）、`UnpackView.swift`（解压页和它的 UnpackModel：一个接一个解、就地问密码） |
 | `ImageConvert/` | `ImageConverter.swift`（ImageIO 读写、转正方向、图标格式）、`ConvertView.swift`（转换页和它的 ConvertModel） |
-| `Watermark/` | `GeminiMark.swift`（找星标、反解、另存）、`VideoDelogo.swift`（第一帧、补像素、导出）、`WatermarkView.swift`（去水印页：三个模式，和 Gemini 那一节）、`VideoMarkView.swift`（视频台标：第一帧上拖框、导出）；M4 加 `Inpainter.swift`、`EraseCanvas.swift` |
+| `Watermark/` | `GeminiMark.swift`（找星标、反解、另存）、`VideoDelogo.swift`（第一帧、补像素、导出）、`Inpainter.swift`（LaMa：裁、补、羽化贴回）、`EraseCanvas.swift`（画笔擦除：涂、撤销、擦除、存成）、`WatermarkView.swift`（去水印页：三个模式，和 Gemini 那一节）、`VideoMarkView.swift`（视频台标：第一帧上拖框、导出） |
 | `Resources/` | `Assets.xcassets`（小猫图标）、`gemini-alpha-*.bin`、`7zz-LICENSE.txt`、`gemini-watermark-LICENSE.txt`；`changelog.json` 第一次发版时加 |
 | `macos/` | `Config/{Base,Debug,Release}.xcconfig`（`Tests.xcconfig` M1 加）、`build-dmg.sh`、`fetch-vendor.sh`（拉 7zz 和模型到被忽略的 `Vendor/`，7zz 的许可证写到 `Resources/7zz-LICENSE.txt` 入库）、`brand-icons.swift`（同一只小黑猫扒着纸箱，青绿底板） |
 | 仓库根目录 | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/box-native.mdc`、`.gitignore` |
@@ -125,6 +128,7 @@
 - `WindowsNamesTests`：非法字符、结尾空格或点、保留名，以及全角符号（比如「：」）不算问题；
 - `GeminiMarkTests`：照 Gemini 公式在有纹理的图上盖星标，几种候选都认得对，去掉后每个像素误差不超过 3（α 不到 3/255 的边缘上游不动，那里本来差 2–3）；没盖的认不出、不出文件；
 - `VideoDelogoTests`：补像素的纯函数；用 AVAssetWriter 造一段带白色台标的小视频，框上导出后台标那里变回底色；
+- `InpainterTests`：裁哪一块、笔画画成的遮罩和外接框；真跑一次 LaMa 把平滑底色上的红方块补掉（涂的范围外一个像素不动）；撤销的顺序；
 - `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走；外加名字的纯函数；
 - `ImageConverterTests`：10 种格式各转一遍（类型、尺寸、JPEG 透明处是白的、图标是正方形）、拍摄信息带过去和转正方向、动图留着每一帧、能读什么；
 - `NavigatorTests`：拖进来的文件往哪送、哪几格能收；
@@ -137,8 +141,8 @@
 - 版本号只在 `Base.xcconfig` 的 `MARKETING_VERSION` 里改，同时要在 `changelog.json` 加一条，否则 `build-dmg.sh` 会中止。
 - `build-dmg.sh` 照搬 Kitty Tools 的路径 B，另外加两项检查：
   - `codesign -d -r-` 看 `7zz` 是用本团队证书签的；
-  - LaMa 模型在，并且 SHA256 对得上。
-- 预计包体：7zz 约 3 MB + LaMa 约 100 MB + 其余几 MB。
+  - LaMa 模型在包里（SHA256 在 fetch-vendor.sh 里已经校验过）。
+- 包体：LaMa 约 207 MB + 7zz 约 3 MB + 其余几 MB，共约 215 MB（Debug 实测）。
 
 ## 5. 里程碑
 
@@ -147,7 +151,7 @@
   - ponytail: 没有进度条和取消（大包只转圈）；7zz 的 `-bsp1` 能给进度，要的时候再接。
 - **M2 图片转换**（2026-10-30 做完，共 32 个单测）：`ImageConverter` → 转换页 → 首页「收到 N 个文件，点一格交给它」。
 - **M3 Gemini 角标 + 视频台标**（2026-10-30 做完，共 38 个单测）：`GeminiMark` → `VideoDelogo` → 去水印页（画笔擦除那一格先空着）。**待你手测**：拿真的 Gemini 生成图、带台标的真视频各试一次。
-- **M4 框选擦除**：选定模型并写进 `fetch-vendor.sh` → 推理和裁剪贴回 → 画笔界面。
+- **M4 画笔擦除**（2026-10-30 做完，共 42 个单测）：选定模型并写进 `fetch-vendor.sh` → `Inpainter` → 画笔界面 → Gemini 认不出时一键改用画笔擦除。**待你手测**：在真图上涂一处水印擦一下。
 
 ## 6. 第一版不做
 

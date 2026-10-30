@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		6B0000000000000000000031 /* 7zz in Embed 7zz */ = {isa = PBXBuildFile; fileRef = 6B0000000000000000000030 /* 7zz */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		6B0000000000000000000035 /* LaMa.mlmodelc in Embed LaMa */ = {isa = PBXBuildFile; fileRef = 6B0000000000000000000034 /* LaMa.mlmodelc */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,6 +33,17 @@
 			name = "Embed 7zz";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6B0000000000000000000036 /* Embed LaMa */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				6B0000000000000000000035 /* LaMa.mlmodelc in Embed LaMa */,
+			);
+			name = "Embed LaMa";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +55,7 @@
 		6B0000000000000000000021 /* KittyBoxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KittyBoxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6B0000000000000000000022 /* Tests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Tests.xcconfig; sourceTree = "<group>"; };
 		6B0000000000000000000030 /* 7zz */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = 7zz; sourceTree = "<group>"; };
+		6B0000000000000000000034 /* LaMa.mlmodelc */ = {isa = PBXFileReference; lastKnownFileType = folder; path = LaMa.mlmodelc; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -112,6 +125,7 @@
 			isa = PBXGroup;
 			children = (
 				6B0000000000000000000030 /* 7zz */,
+				6B0000000000000000000034 /* LaMa.mlmodelc */,
 			);
 			path = Vendor;
 			sourceTree = "<group>";
@@ -127,6 +141,7 @@
 				6B000000000000000000000D /* Frameworks */,
 				6B000000000000000000000E /* Resources */,
 				6B0000000000000000000032 /* Embed 7zz */,
+				6B0000000000000000000036 /* Embed LaMa */,
 			);
 			buildRules = (
 			);

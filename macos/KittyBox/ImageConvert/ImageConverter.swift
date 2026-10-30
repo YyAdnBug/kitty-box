@@ -116,8 +116,8 @@ nonisolated enum ImageConverter {
     return target
   }
 
-  /// 按「旋转方向」转正的整张图（RAW 也在这里显影）
-  private static func upright(_ source: CGImageSource, at index: Int) -> CGImage? {
+  /// 按「旋转方向」转正的整张图（RAW 也在这里显影）；画笔擦除也用它读图
+  static func upright(_ source: CGImageSource, at index: Int) -> CGImage? {
     let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
     let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
     let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
@@ -128,6 +128,27 @@ nonisolated enum ImageConverter {
       kCGImageSourceShouldCacheImmediately: true,
     ]
     return CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary)
+  }
+
+  /// 去水印的结果另存：和原图同格式、带上原图的照片信息（方向标记改成 1：存的是已经转正的像素），有损格式质量 0.95。
+  /// Gemini 角标和画笔擦除共用；写不出来时不留半截文件
+  static func save(_ image: CGImage, like source: CGImageSource, to target: URL) -> Bool {
+    guard let type = CGImageSourceGetType(source),
+      let destination = CGImageDestinationCreateWithURL(target as CFURL, type, 1, nil)
+    else { return false }
+    var properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
+    properties[kCGImagePropertyOrientation] = 1
+    if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+      tiff[kCGImagePropertyTIFFOrientation] = 1
+      properties[kCGImagePropertyTIFFDictionary] = tiff
+    }
+    properties[kCGImageDestinationLossyCompressionQuality] = 0.95
+    CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+    guard CGImageDestinationFinalize(destination) else {
+      try? FileManager.default.removeItem(at: target)
+      return false
+    }
+    return true
   }
 
   /// 等比放进透明的正方形画布（图标格式用）

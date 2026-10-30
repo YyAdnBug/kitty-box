@@ -4,6 +4,7 @@
 //   test -only-testing:KittyBoxTests/SnapshotProbeTests
 
 import AppKit
+import ImageIO
 import SwiftUI
 import Testing
 
@@ -65,6 +66,27 @@ struct SnapshotProbeTests {
     try await Task.sleep(for: .seconds(1))
     watermark.video.rects = [CGRect(x: 118, y: 6, width: 34, height: 20)]
     try await shoot(WatermarkView(model: watermark), "watermark-video", height: 560)
+
+    // 画笔擦除：系统自带的壁纸，涂两笔；再用同一条路（裁、缩、补、贴回）真的擦一处，存成 PNG 看接缝
+    let photo = URL(filePath: "/System/Library/Desktop Pictures/Sonoma.heic")
+    watermark.mode = .erase
+    watermark.erase.load(photo)
+    try await Task.sleep(for: .seconds(2))
+    let image = try #require(watermark.erase.image)
+    let (cx, cy) = (CGFloat(image.width) * 0.55, CGFloat(image.height) * 0.62)
+    watermark.erase.strokes = [
+      .init(points: [CGPoint(x: cx - 300, y: cy), CGPoint(x: cx + 300, y: cy)], width: 160)
+    ]
+    try await shoot(WatermarkView(model: watermark), "watermark-erase", height: 560)
+    await watermark.erase.erase()
+    let erased = try #require(watermark.erase.image)
+    let crop = try #require(
+      erased.cropping(to: CGRect(x: cx - 600, y: cy - 300, width: 1200, height: 600)))
+    let destination = try #require(
+      CGImageDestinationCreateWithURL(
+        folder.appending(path: "erase-result.png") as CFURL, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, crop, nil)
+    #expect(CGImageDestinationFinalize(destination))
   }
 
   private func shoot(_ page: some View, _ name: String, height: CGFloat = 480) async throws {

@@ -106,7 +106,6 @@ nonisolated enum GeminiMark {
   /// 去掉角标的图另存在原图旁边：「原名-去水印」、同格式，重名加「 2」；照片信息带过去
   @concurrent static func clean(_ source: URL) async throws -> URL {
     guard let input = CGImageSourceCreateWithURL(source as CFURL, nil),
-      let type = CGImageSourceGetType(input),
       let image = CGImageSourceCreateImageAtIndex(input, 0, nil),
       var pixels = pixels(of: image)
     else { throw Failure.unreadable }
@@ -123,16 +122,7 @@ nonisolated enum GeminiMark {
       })
     else { throw Failure.unwritable }
     let target = source.adding("-去水印").uniqued()
-    guard let destination = CGImageDestinationCreateWithURL(target as CFURL, type, 1, nil) else {
-      throw Failure.unwritable
-    }
-    var properties = CGImageSourceCopyPropertiesAtIndex(input, 0, nil) as? [CFString: Any] ?? [:]
-    properties[kCGImageDestinationLossyCompressionQuality] = 0.95
-    CGImageDestinationAddImage(destination, result, properties as CFDictionary)
-    guard CGImageDestinationFinalize(destination) else {
-      try? FileManager.default.removeItem(at: target)
-      throw Failure.unwritable
-    }
+    guard ImageConverter.save(result, like: input, to: target) else { throw Failure.unwritable }
     return target
   }
 

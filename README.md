@@ -13,12 +13,11 @@
   <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-555" alt="Apple Silicon">
   <img src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white" alt="Swift 6">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
-  <a href="https://github.com/YyAdnBug/kitty-box/releases/latest"><img src="https://img.shields.io/github/v/release/YyAdnBug/kitty-box?display_name=release&label=%E4%B8%8B%E8%BD%BD" alt="下载最新版"></a>
 </p>
 
 把常用的文件处理放进一个原生窗口：文件拖到程序坞图标或窗口上，选一个工具就处理好，结果另存在原文件旁边，不碰原文件。macOS 版用 Swift 6 + SwiftUI / AppKit 写成，除了随包的 7-Zip 和画笔擦除用的 LaMa 模型，只用系统自带的能力，全部在本机完成、不联网。
 
-> 个人项目，持续更新中。只支持 Apple 芯片、macOS 15 及以上。以后会再写一套 Windows 版。
+> 个人项目，**第一版在测试中，暂时没有可下载的版本**，想试可以按下面「从源码构建」自己编。只支持 Apple 芯片、macOS 15 及以上。以后会再写一套 Windows 版。
 
 ## 分支
 
@@ -53,15 +52,6 @@
 - **Gemini 角标**：用反向 alpha 混合把 Gemini 生成图右下角的星标还原掉，不靠 AI 猜；认不出的一键改用画笔擦除
 - **画笔擦除**：涂哪擦哪，本机的 LaMa 模型补全，原图分辨率不变；擦完能接着涂、能撤销
 - **视频台标**：在第一帧上框出台标位置（可以框几处），逐帧补掉，编码跟原视频走
-
-## 安装
-
-1. 从 [Releases](https://github.com/YyAdnBug/kitty-box/releases/latest) 下载 `Kitty.Box_x.y.z_arm64.dmg`（`_arm64.zip` 是 App 内更新用的，不用手动下载），打开后把 Kitty Box 拖进「应用程序」。
-2. App 用 Apple Development 签名、没有公证，第一次打开会被系统拦下（提示「未打开」，不是「已损坏」）：到「系统设置 › 隐私与安全性」点「仍要打开」。也可以在终端执行：
-   ```bash
-   xattr -dr com.apple.quarantine "/Applications/Kitty Box.app"
-   ```
-3. 只有第一次要放行；以后有新版本时，在「关于 Kitty Box」或 App 菜单的「检查更新…」里一键更新。
 
 ## 从源码构建
 

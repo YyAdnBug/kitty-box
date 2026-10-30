@@ -1,5 +1,5 @@
-// 首页（A2）：四个工具一格一个，点一格进去用，左上角返回。照 Kitty Tools 主界面的格子：家族色块 + 名字 + 一行说明。
-// 文件拖到哪一格就交给哪个工具，拖到格子外面按类型分派（Navigator）；有图片时顶上一条提示，点一格交给它。
+// 首页（A2）：四个工具两行两列，一格一张卡（家族色块 + 名字 + 一行说明），点一格进去用，左上角返回。
+// 文件拖到哪一格就交给哪个工具，拖到格子外面、或 ⌘V 粘贴，按类型分派（Navigator）；有图片时顶上一条提示，点一格交给它。
 
 import SwiftUI
 
@@ -51,34 +51,32 @@ struct HomeView: View {
 
   var body: some View {
     NavigationStack(path: $navigator.path) {
-      VStack(spacing: 12) {
+      VStack(spacing: 20) {
         if let release = Updater.shared.available { updateBanner(release) }
         if !navigator.pending.isEmpty { pendingBanner }
-        HStack(spacing: 12) {
-          ForEach(Tool.allCases) { tool in
-            let pending = navigator.pending
-            let refused = !pending.isEmpty && !navigator.accepts(tool, pending)
-            ToolButton(tool: tool) {
-              if pending.isEmpty {
-                navigator.path.append(tool)
-              } else {
-                navigator.open(tool, with: pending)
-              }
-            } drop: { urls in
-              navigator.open(tool, with: urls)
-            }
-            .disabled(refused)
-            .opacity(refused ? 0.4 : 1)
+        VStack(spacing: 4) {
+          Text("要处理什么文件？").font(.system(size: 20, weight: .semibold))
+          Text("拖进窗口、拖到程序坞图标上或按 ⌘V 粘贴，会自动交给合适的工具；也可以直接点一格")
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
+        Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+          GridRow {
+            tile(.pack)
+            tile(.unpack)
+          }
+          GridRow {
+            tile(.convert)
+            tile(.watermark)
           }
         }
       }
-      .padding(20)
+      .frame(maxWidth: 640)
+      .padding(24)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .contentShape(Rectangle())
-      .dropDestination(for: URL.self) { urls, _ in
-        navigator.route(urls)
-        return true
-      }
+      .fileDrop(.accentColor) { navigator.route($0) }
       .navigationTitle("Kitty Box")
       .navigationDestination(for: Tool.self) { tool in
         switch tool {
@@ -90,29 +88,43 @@ struct HomeView: View {
       }
     }
     // 进到工具页时窗口最小高度跟着变大（工具页自己的 minHeight 传不到窗口上）
-    .frame(
-      minWidth: 600,
-      minHeight: navigator.path.isEmpty ? (navigator.pending.isEmpty ? 220 : 270) : 560
-    )
+    .frame(minWidth: 600, minHeight: navigator.path.isEmpty ? homeHeight : 560)
     .onAppear { navigator.openWindow = openWindow }
+  }
+
+  /// 首页的最小高度：标题 + 两行格子，每多一条横幅加一条的高
+  private var homeHeight: CGFloat {
+    330 + (navigator.pending.isEmpty ? 0 : 52) + (Updater.shared.available == nil ? 0 : 52)
+  }
+
+  private func tile(_ tool: Tool) -> some View {
+    let pending = navigator.pending
+    let refused = !pending.isEmpty && !navigator.accepts(tool, pending)
+    return ToolButton(tool: tool) {
+      if pending.isEmpty {
+        navigator.path.append(tool)
+      } else {
+        navigator.open(tool, with: pending)
+      }
+    } drop: { urls in
+      navigator.open(tool, with: urls)
+    }
+    .disabled(refused)
+    .opacity(refused ? 0.4 : 1)
   }
 
   /// 有新版本时顶上的一条，点了打开关于窗口
   private func updateBanner(_ release: Updater.Release) -> some View {
-    HStack(spacing: 10) {
-      Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
+    banner(symbol: "arrow.down.circle.fill", tint: .accentColor) {
       Text("有新版本 \(release.version)")
       Spacer()
-      Button("看看") { openWindow(id: KittyBoxApp.aboutID) }.buttonStyle(.link)
+      Button("看看") { openWindow(id: KittyBoxApp.aboutID) }
     }
-    .padding(.horizontal, 12).padding(.vertical, 8)
-    .cardSurface()
   }
 
   /// 收到文件、还没选工具时顶上的一条
   private var pendingBanner: some View {
-    HStack(spacing: 10) {
-      Image(systemName: "tray.and.arrow.down.fill").foregroundStyle(.secondary)
+    banner(symbol: "tray.and.arrow.down.fill", tint: .accentColor) {
       Text(
         navigator.pending.count == 1
           ? "收到「\(navigator.pending[0].lastPathComponent)」，点一格交给它"
@@ -120,9 +132,19 @@ struct HomeView: View {
       )
       .lineLimit(1).truncationMode(.middle)
       Spacer()
-      Button("不用了") { navigator.pending = [] }.buttonStyle(.link)
+      Button("不用了") { navigator.pending = [] }
     }
-    .padding(.horizontal, 12).padding(.vertical, 8)
+  }
+
+  private func banner(symbol: String, tint: Color, @ViewBuilder content: () -> some View)
+    -> some View
+  {
+    HStack(spacing: 10) {
+      Image(systemName: symbol).foregroundStyle(tint)
+      content()
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 14).padding(.vertical, 10)
     .cardSurface()
   }
 }
@@ -139,6 +161,7 @@ private struct ToolButton: View {
       .buttonStyle(TileButtonStyle())
       .overlay {
         RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+          .fill(tool.color.opacity(0.08))
           .strokeBorder(tool.color, lineWidth: 2)
           .opacity(targeted ? 1 : 0)
           .allowsHitTesting(false)
@@ -156,17 +179,23 @@ private struct ToolTile: View {
   let tool: Tool
 
   var body: some View {
-    VStack(spacing: 8) {
-      KindTile(symbol: tool.symbol, color: tool.color, size: 40)
-      Text(tool.title).font(.system(size: 14, weight: .semibold))
-      Text(tool.detail)
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .lineLimit(2)
+    HStack(spacing: 14) {
+      KindTile(symbol: tool.symbol, color: tool.color, size: 44)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(tool.title).font(.system(size: 14, weight: .semibold))
+        Text(tool.detail)
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
+      Spacer(minLength: 4)
+      Image(systemName: "chevron.right")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.tertiary)
     }
-    .frame(maxWidth: .infinity, minHeight: 120)
-    .padding(.horizontal, 8)
+    .padding(16)
+    .frame(maxWidth: .infinity, minHeight: 84)
     .contentShape(Rectangle())
   }
 }
@@ -181,7 +210,7 @@ private struct TileButtonStyle: ButtonStyle {
     configuration.label
       .background(hovering ? Style.hoverFill : .clear, in: shape)
       .cardSurface()
-      .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+      .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
       .animation(
         Style.Motion.glide.animation(reduced: reduceMotion), value: configuration.isPressed
       )

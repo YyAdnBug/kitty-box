@@ -1,4 +1,5 @@
 // 视频台标（D4–D6）：拖进一段视频，第一帧铺在中间，在上面拖出台标的位置（可以框几处，框角的 × 删掉一处），点「导出」。
+// 导出好了画面换成前后对比（原视频和导出的第一帧，拖中间的线看），点「对比」关掉接着框。
 // 框存的是第一帧的像素坐标（左上为原点），画面按比例缩放显示，拖的时候换算回去。
 
 import AppKit
@@ -17,6 +18,10 @@ import UniformTypeIdentifiers
 
   private(set) var source: URL?
   private(set) var frame: CGImage?
+  /// 导出好的视频的第一帧：和 frame 拖线对比
+  private(set) var resultFrame: CGImage?
+  /// 画面上是不是在前后对比（导出好了自动打开；关掉才能接着框）
+  var comparing = false
   /// 第一帧上的像素坐标，左上为原点
   var rects: [CGRect] = []
   private(set) var state = State.idle
@@ -31,6 +36,8 @@ import UniformTypeIdentifiers
   func load(_ url: URL) {
     source = url
     frame = nil
+    resultFrame = nil
+    comparing = false
     rects = []
     state = .loading
     Task {
@@ -54,6 +61,8 @@ import UniformTypeIdentifiers
           if case .exporting = self.state { self.state = .exporting(fraction) }
         }
       }
+      resultFrame = try? await VideoDelogo.firstFrame(of: url)
+      comparing = resultFrame != nil
       state = .done(url)
     } catch {
       state = .failed(error.localizedDescription)
@@ -70,16 +79,20 @@ struct VideoMarkView: View {
   var body: some View {
     VStack(spacing: 0) {
       if model.source == nil {
-        DropHint(text: "把视频拖到这里，在第一帧上框出台标", symbol: "film") { choosing = true }
-          .padding(20)
-        Spacer()
+        DropZone(
+          symbol: "film", color: Tool.watermark.color, title: "拖入视频",
+          detail: "在第一帧上框出台标，导出时逐帧补上；结果另存成「原名-去水印」"
+        ) { choosing = true }
       } else if let frame = model.frame {
-        canvas(frame).padding(16)
+        if model.comparing, let after = model.resultFrame {
+          CompareSlider(before: frame, after: after).padding(16)
+        } else {
+          canvas(frame).padding(16)
+        }
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-      Divider()
-      footer.padding(.horizontal, 20).padding(.vertical, 12)
+      footer.bottomBar()
     }
     .fileImporter(isPresented: $choosing, allowedContentTypes: [.movie]) {
       if case .success(let url) = $0 { model.load(url) }
@@ -162,31 +175,33 @@ struct VideoMarkView: View {
         )
         .foregroundStyle(.secondary)
         Spacer()
-        if !model.rects.isEmpty { Button("清空") { model.rects = [] }.disabled(model.busy) }
+        if model.resultFrame != nil {
+          Toggle("对比", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
+            .toggleStyle(.button)
+        }
+        if !model.rects.isEmpty, !model.comparing {
+          Button("清空") { model.rects = [] }.disabled(model.busy)
+        }
         if model.source != nil { Button("换一个视频…") { choosing = true }.disabled(model.busy) }
         Button("导出") { Task { await model.export() } }
           .buttonStyle(.borderedProminent)
           .keyboardShortcut(.defaultAction)
           .disabled(model.rects.isEmpty || model.busy)
       }
-      switch model.state {
-      case .exporting(let fraction):
-        ProgressView(value: fraction) { Text("正在导出…").font(.caption) }
-      case .done(let url):
-        HStack {
-          Label("存成「\(url.lastPathComponent)」", systemImage: "checkmark.circle.fill")
-            .foregroundStyle(.green)
-          Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-            .buttonStyle(.link)
+      Group {
+        switch model.state {
+        case .exporting(let fraction):
+          ProgressView(value: fraction) { Text("正在导出…") }
+        case .done(let url):
+          DoneLine(text: "存成「\(url.lastPathComponent)」", url: url)
+        case .failed(let reason):
+          FailLine(reason: reason)
+        case .idle, .loading:
+          Text("导出的编码跟原视频走（HEVC 的还是 HEVC，别的出 H.264），原视频不动。")
+            .foregroundStyle(.secondary)
         }
-        .font(.caption)
-      case .failed(let reason):
-        Label(reason, systemImage: "exclamationmark.triangle.fill").font(.caption)
-          .foregroundStyle(.red)
-      case .idle, .loading:
-        Text("导出的编码跟原视频走（HEVC 的还是 HEVC，别的出 H.264），原视频不动。")
-          .font(.caption).foregroundStyle(.secondary)
       }
+      .font(.caption)
     }
   }
 }

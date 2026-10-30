@@ -1,5 +1,6 @@
-// 打包页（B2–B6、B10、B11）：拖进要打包的东西 → 选 zip / 7z、设不设密码 → 看忽略清单（勾、加、删，改了就记住）→
-// 底部写「打包 N 个，忽略 M 项」，点开看忽略了哪些、哪些文件名 Windows 不认 → 打包，包放在原文件旁边。
+// 打包页（B2–B6、B10、B11）：拖进（或 ⌘V 粘贴）要打包的东西 → 选 zip / 7z、设不设密码 → 看忽略清单（勾、加、删，改了就记住）→
+// 底部写「打包 N 个，忽略 M 项」，点开看忽略了哪些；哪些文件名 Windows 不认单列一节 → 打包，包放在原文件旁边。
+// 空着时整页是拖放区；有东西了是分组表单（同系统设置的样子），操作栏在底部。
 
 import AppKit
 import Observation
@@ -58,23 +59,25 @@ struct PackView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 20) {
+      if model.items.isEmpty {
+        DropZone(
+          symbol: Tool.pack.symbol, color: Tool.pack.color, title: "拖入要打包的文件或文件夹",
+          detail: "可以一次放好几个，打好的包放在它们旁边"
+        ) { choosing = true }
+      } else {
+        Form {
           itemsSection
           optionsSection
           ignoreSection
+          problemsSection
         }
-        .padding(20)
+        .formStyle(.grouped)
       }
-      Divider()
-      footer.padding(.horizontal, 20).padding(.vertical, 12)
+      footer.bottomBar()
     }
     .frame(minWidth: 600, minHeight: 540)
     .navigationTitle("打包")
-    .dropDestination(for: URL.self) { urls, _ in
-      model.add(urls)
-      return true
-    }
+    .fileDrop(Tool.pack.color) { model.add($0) }
     .fileImporter(
       isPresented: $choosing, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true
     ) {
@@ -90,21 +93,21 @@ struct PackView: View {
 
   // MARK: 要打包的东西
 
-  @ViewBuilder private var itemsSection: some View {
-    if model.items.isEmpty {
-      DropHint(text: "把要打包的文件或文件夹拖到这里", symbol: "archivebox") { choosing = true }
-    } else {
-      VStack(alignment: .leading, spacing: 6) {
-        ForEach(model.items, id: \.self) { url in
-          HStack(spacing: 8) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-              .resizable().frame(width: 20, height: 20)
-            Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle)
-            Spacer()
-            Button("移除", systemImage: "xmark.circle.fill") { model.remove(url) }
-              .labelStyle(.iconOnly).buttonStyle(.borderless).foregroundStyle(.secondary)
-          }
+  private var itemsSection: some View {
+    Section {
+      ForEach(model.items, id: \.self) { url in
+        HStack(spacing: 10) {
+          FileThumb(url: url, size: 24)
+          Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+          Spacer()
+          Button("移除", systemImage: "xmark.circle.fill") { model.remove(url) }
+            .labelStyle(.iconOnly).buttonStyle(.borderless).foregroundStyle(.tertiary)
         }
+      }
+    } header: {
+      HStack {
+        Text("要打包的")
+        Spacer()
         Button("添加…") { choosing = true }.controlSize(.small)
       }
     }
@@ -113,20 +116,20 @@ struct PackView: View {
   // MARK: 格式和密码
 
   private var optionsSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 16) {
-        Picker("格式", selection: $format) {
-          Text("zip").tag(Archiver.Format.zip)
-          Text("7z").tag(Archiver.Format.sevenZip)
-        }
-        .pickerStyle(.segmented)
-        .fixedSize()
-        SecureField("密码", text: $model.password, prompt: Text("不设密码"))
-          .frame(width: 200)
+    Section {
+      Picker("格式", selection: $format) {
+        Text("zip").tag(Archiver.Format.zip)
+        Text("7z").tag(Archiver.Format.sevenZip)
       }
+      .pickerStyle(.segmented)
+      .fixedSize()
+      SecureField("密码", text: $model.password, prompt: Text("不设密码"))
       if format == .zip, !model.password.isEmpty {
         Toggle("让 Windows 自带解压也能打开", isOn: $windowsCompatible)
       }
+    } header: {
+      Text("格式和密码")
+    } footer: {
       if let problem = Archiver.passwordProblem(options) {
         Text(problem).font(.caption).foregroundStyle(.red)
       } else {
@@ -149,26 +152,28 @@ struct PackView: View {
   // MARK: 忽略清单
 
   private var ignoreSection: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(alignment: .firstTextBaseline) {
-        Text("忽略这些").font(.headline)
-        Text("改了就记住，下次打包照样").font(.caption).foregroundStyle(.secondary)
-      }
+    Section {
       group("系统杂文件", IgnoreList.system.map(\.pattern))
       group("开发目录", IgnoreList.developer.map(\.pattern)) {
         let allOn = IgnoreList.developer.allSatisfy { model.ignore.isOn($0.pattern) }
         Button(allOn ? "全不勾" : "全部勾上") {
           for item in IgnoreList.developer { model.ignore.set(item.pattern, on: !allOn) }
         }
-        .buttonStyle(.link).font(.caption)
+        .buttonStyle(.link)
       }
       group("我加的", model.ignore.custom, removable: true)
       HStack {
         TextField("加一条", text: $newRule, prompt: Text("加一条：*.log、草稿、build/"))
+          .labelsHidden()
           .onSubmit(addRule)
-          .frame(maxWidth: 260)
         Button("添加", action: addRule).disabled(newRule.isEmpty)
       }
+    } header: {
+      HStack(alignment: .firstTextBaseline) {
+        Text("忽略这些")
+        Text("改了就记住，下次打包照样").font(.caption).foregroundStyle(.secondary)
+      }
+    } footer: {
       Text(ruleProblem ?? "按名字匹配，路径里哪一层都算；* 和 ? 可用；以 / 结尾的只认文件夹。")
         .font(.caption).foregroundStyle(ruleProblem == nil ? Color.secondary : .red)
     }
@@ -178,9 +183,10 @@ struct PackView: View {
     _ title: String, _ patterns: [String], removable: Bool = false,
     @ViewBuilder trailing: () -> some View = { EmptyView() }
   ) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
-        Text(title).font(.subheadline).foregroundStyle(.secondary)
+        Text(title)
+        Spacer()
         trailing()
       }
       if patterns.isEmpty {
@@ -205,6 +211,7 @@ struct PackView: View {
       }
       .controlSize(.small)
     }
+    .padding(.vertical, 2)
   }
 
   private func addRule() {
@@ -212,30 +219,44 @@ struct PackView: View {
     if ruleProblem == nil { newRule = "" }
   }
 
+  // MARK: 忽略了哪些、Windows 不认的名字
+
+  @ViewBuilder private var problemsSection: some View {
+    if showsIgnored, let ignored = model.plan?.ignored, !ignored.isEmpty {
+      Section("忽略了这些") {
+        PathList(rows: ignored.map { ($0.path, "← " + IgnoreList.display($0.rule)) })
+      }
+    }
+    if let problems = model.plan?.windowsProblems, !problems.isEmpty {
+      Section {
+        PathList(rows: problems.map { ($0.path, $0.reason) })
+      } header: {
+        Label("\(problems.count) 个文件名 Windows 不认", systemImage: "exclamationmark.triangle.fill")
+          .foregroundStyle(.orange)
+      } footer: {
+        Text("对方解压时会出错或少文件。照样能打包，要不要改名你决定。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+    }
+  }
+
   // MARK: 底部
 
   private var footer: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 12) {
-        summary
-        Spacer()
-        if model.running { ProgressView().controlSize(.small) }
-        Button("打包") { Task { await model.pack(options) } }
-          .buttonStyle(.borderedProminent)
-          .keyboardShortcut(.defaultAction)
-          .disabled(
-            model.plan?.files.isEmpty != false || model.running
-              || Archiver.passwordProblem(options) != nil)
+    HStack(spacing: 12) {
+      switch model.result {
+      case .success(let url): DoneLine(text: "已生成「\(url.lastPathComponent)」", url: url)
+      case .failure(let error): FailLine(reason: error.localizedDescription)
+      case nil: summary
       }
-      if showsIgnored, let ignored = model.plan?.ignored, !ignored.isEmpty {
-        PathList(rows: ignored.map { ($0.path, "← " + IgnoreList.display($0.rule)) })
-      }
-      if let problems = model.plan?.windowsProblems, !problems.isEmpty {
-        Text("\(problems.count) 个文件名 Windows 不认，对方解压时会出错或少文件。照样能打包，要不要改名你决定：")
-          .font(.caption).foregroundStyle(.orange)
-        PathList(rows: problems.map { ($0.path, $0.reason) })
-      }
-      resultLine
+      Spacer()
+      if model.running { ProgressView().controlSize(.small) }
+      Button("打包") { Task { await model.pack(options) } }
+        .buttonStyle(.borderedProminent)
+        .keyboardShortcut(.defaultAction)
+        .disabled(
+          model.plan?.files.isEmpty != false || model.running
+            || Archiver.passwordProblem(options) != nil)
     }
   }
 
@@ -255,23 +276,6 @@ struct PackView: View {
       Text("正在列文件…").foregroundStyle(.secondary)
     }
   }
-
-  @ViewBuilder private var resultLine: some View {
-    switch model.result {
-    case .success(let url):
-      HStack {
-        Label("已生成「\(url.lastPathComponent)」", systemImage: "checkmark.circle.fill")
-          .foregroundStyle(.green)
-        Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-          .buttonStyle(.link)
-      }
-    case .failure(let error):
-      Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
-        .foregroundStyle(.red)
-    case nil:
-      EmptyView()
-    }
-  }
 }
 
 extension IgnoreList {
@@ -285,27 +289,7 @@ extension IgnoreList {
   }
 }
 
-/// 空着时的拖放提示：虚线框 + 一句话 + 「选择…」（解压页也用）
-struct DropHint: View {
-  let text: String
-  let symbol: String
-  let choose: () -> Void
-
-  var body: some View {
-    VStack(spacing: 10) {
-      Image(systemName: symbol).font(.system(size: 28)).foregroundStyle(.secondary)
-      Text(text).foregroundStyle(.secondary)
-      Button("选择…", action: choose)
-    }
-    .frame(maxWidth: .infinity, minHeight: 140)
-    .background {
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-        .strokeBorder(Style.hairline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-    }
-  }
-}
-
-/// 路径 + 右边一小段说明的清单：几行就多高，最多露出六行，多了自己滚
+/// 路径 + 右边一小段说明的清单（表单里的一行）：几行就多高，最多露出六行，多了自己滚
 private struct PathList: View {
   let rows: [(path: String, note: String)]
 
@@ -321,11 +305,8 @@ private struct PathList: View {
           .font(.caption)
         }
       }
-      .padding(8)
     }
-    .frame(height: min(CGFloat(rows.count) * 18 + 16, 124))
-    .background(
-      Style.hoverFill, in: RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous))
+    .frame(height: min(CGFloat(rows.count) * 18, 108))
   }
 }
 

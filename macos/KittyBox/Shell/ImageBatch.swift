@@ -82,7 +82,7 @@ import SwiftUI
   }
 }
 
-/// 一张图的一行：图标、名字、做到哪了；还没开始的能移除
+/// 一张图的一行：缩略图、名字、做到哪了；做好的能在访达中显示，还没开始的能移除
 struct BatchRow: View {
   let item: ImageBatch.Item
   /// 「转成」「存成」：做好了那行写「转成「x.jpg」」
@@ -94,16 +94,15 @@ struct BatchRow: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(nsImage: NSWorkspace.shared.icon(forFile: item.source.path))
-        .resizable().frame(width: 28, height: 28)
-      VStack(alignment: .leading, spacing: 4) {
+      FileThumb(url: item.source)
+      VStack(alignment: .leading, spacing: 3) {
         Text(item.source.lastPathComponent).lineLimit(1).truncationMode(.middle)
-        status
+        status.font(.system(size: 11))
       }
-      Spacer()
+      Spacer(minLength: 4)
       if removable, case .waiting = item.state {
         Button("移除", systemImage: "xmark.circle.fill", action: remove)
-          .labelStyle(.iconOnly).buttonStyle(.borderless).foregroundStyle(.secondary)
+          .labelStyle(.iconOnly).buttonStyle(.borderless).foregroundStyle(.tertiary)
       }
     }
     .padding(.vertical, 4)
@@ -112,26 +111,19 @@ struct BatchRow: View {
   @ViewBuilder private var status: some View {
     switch item.state {
     case .waiting:
-      Text("等着").font(.caption).foregroundStyle(.secondary)
+      Text("等着").foregroundStyle(.secondary)
     case .running:
       HStack(spacing: 6) {
         ProgressView().controlSize(.mini)
-        Text("正在处理…").font(.caption).foregroundStyle(.secondary)
+        Text("正在处理…").foregroundStyle(.secondary)
       }
     case .done(let url):
-      HStack(spacing: 8) {
-        Label("\(doneVerb)「\(url.lastPathComponent)」", systemImage: "checkmark.circle.fill")
-          .font(.caption).foregroundStyle(.green)
-        Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-          .buttonStyle(.link).font(.caption)
-      }
+      DoneLine(text: "\(doneVerb)「\(url.lastPathComponent)」", url: url)
     case .failed(let reason):
-      HStack(spacing: 8) {
-        Label(reason, systemImage: "exclamationmark.triangle.fill").font(.caption)
-          .foregroundStyle(.red)
+      VStack(alignment: .leading, spacing: 2) {
+        FailLine(reason: reason)
         if let onFailure {
-          Button(onFailure.title) { onFailure.action(item.source) }.buttonStyle(.link).font(
-            .caption)
+          Button(onFailure.title) { onFailure.action(item.source) }.buttonStyle(.link)
         }
       }
     }

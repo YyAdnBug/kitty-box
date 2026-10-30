@@ -1,5 +1,5 @@
 // 解压页（B7–B9）：拖进压缩包就一个接一个解，解到包旁边。有密码的停下来就地问（不记），密码不对说一声再问。
-// 拖到程序坞图标上的压缩包也进这里（Navigator），直接开始。
+// 拖到程序坞图标上、⌘V 粘贴的压缩包也进这里（Navigator），直接开始。空着时整页是拖放区。
 
 import AppKit
 import Observation
@@ -81,31 +81,31 @@ struct UnpackView: View {
   var body: some View {
     VStack(spacing: 0) {
       if model.jobs.isEmpty {
-        DropHint(text: "把压缩包拖到这里，解到它旁边", symbol: "shippingbox") { choosing = true }
-          .padding(20)
-        Spacer()
+        DropZone(
+          symbol: Tool.unpack.symbol, color: Tool.unpack.color, title: "拖入压缩包",
+          detail: "zip、7z、RAR、tar、iso 等都行，解到它旁边；有密码的会停下来问"
+        ) { choosing = true }
       } else {
         List($model.jobs) { $job in
           JobRow(job: $job) { model.retry(job.id) }
         }
-        Divider()
-        HStack {
-          // verbatim：不然 __MACOSX 的下划线会被当成 Markdown 的斜体
-          Text(verbatim: "zip、7z、RAR、tar、iso 等都行；__MACOSX、._ 开头的杂文件不解出来。")
-            .font(.caption).foregroundStyle(.secondary)
-          Spacer()
+        .listStyle(.inset)
+      }
+      HStack(spacing: 12) {
+        // verbatim：不然 __MACOSX 的下划线会被当成 Markdown 的斜体
+        Text(verbatim: "__MACOSX、._ 开头的杂文件不解出来。")
+          .font(.caption).foregroundStyle(.secondary)
+        Spacer()
+        if !model.jobs.isEmpty {
           Button("清掉做完的") { model.clearFinished() }
           Button("添加…") { choosing = true }
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
       }
+      .bottomBar()
     }
     .frame(minWidth: 600, minHeight: 360)
     .navigationTitle("解压")
-    .dropDestination(for: URL.self) { urls, _ in
-      model.add(urls)
-      return true
-    }
+    .fileDrop(Tool.unpack.color) { model.add($0) }
     .fileImporter(
       isPresented: $choosing, allowedContentTypes: [.item], allowsMultipleSelection: true
     ) {
@@ -120,11 +120,10 @@ private struct JobRow: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(nsImage: NSWorkspace.shared.icon(forFile: job.archive.path))
-        .resizable().frame(width: 28, height: 28)
-      VStack(alignment: .leading, spacing: 4) {
+      FileThumb(url: job.archive)
+      VStack(alignment: .leading, spacing: 3) {
         Text(job.archive.lastPathComponent).lineLimit(1).truncationMode(.middle)
-        status
+        status.font(.system(size: 11))
       }
       Spacer()
     }
@@ -134,22 +133,17 @@ private struct JobRow: View {
   @ViewBuilder private var status: some View {
     switch job.state {
     case .waiting:
-      Text("等着").font(.caption).foregroundStyle(.secondary)
+      Text("等着").foregroundStyle(.secondary)
     case .running:
       HStack(spacing: 6) {
         ProgressView().controlSize(.mini)
-        Text("正在解压…").font(.caption).foregroundStyle(.secondary)
+        Text("正在解压…").foregroundStyle(.secondary)
       }
     case .done(let url):
-      HStack(spacing: 8) {
-        Label("解到「\(url.lastPathComponent)」", systemImage: "checkmark.circle.fill")
-          .font(.caption).foregroundStyle(.green)
-        Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-          .buttonStyle(.link).font(.caption)
-      }
+      DoneLine(text: "解到「\(url.lastPathComponent)」", url: url)
     case .needsPassword(let again):
       HStack(spacing: 8) {
-        Text(again ? "密码不对，再试一次：" : "这个包有密码：").font(.caption)
+        Text(again ? "密码不对，再试一次：" : "这个包有密码：")
           .foregroundStyle(again ? .red : .secondary)
         SecureField("密码", text: $job.password).textFieldStyle(.roundedBorder)
           .frame(width: 180).onSubmit(retry)
@@ -157,8 +151,7 @@ private struct JobRow: View {
       }
       .controlSize(.small)
     case .failed(let reason):
-      Label(reason, systemImage: "exclamationmark.triangle.fill").font(.caption)
-        .foregroundStyle(.red).lineLimit(2)
+      FailLine(reason: reason)
     }
   }
 }

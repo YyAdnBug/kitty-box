@@ -52,6 +52,14 @@ struct SnapshotProbeTests {
     ]
     try await shoot(UnpackView(model: unpack), "unpack")
 
+    try await shoot(ConvertView(model: ImageBatch()), "convert-empty")
+
+    // Gemini 那一行做好了：右边是前后对比，要真的两张图（渐变底，一张右下角盖个白圆当星标）
+    for (name, marked) in [
+      ("Gemini_Generated_Image_1.png", true), ("Gemini_Generated_Image_1-去水印.png", false),
+    ] {
+      try writeSample(samples.appending(path: name), marked: marked)
+    }
     let watermark = WatermarkModel()
     watermark.gemini.items = [
       .init(
@@ -60,6 +68,18 @@ struct SnapshotProbeTests {
       .init(source: samples.appending(path: "截图.png"), state: .failed("没认出 Gemini 角标。")),
     ]
     try await shoot(WatermarkView(model: watermark), "watermark-gemini")
+
+    // 真窗口的工具栏（返回按钮、去水印的模式切换）屏外画不出来：让 App 的主窗口进去水印页停 8 秒，
+    // 窗口编号写进 main-window.txt，由外面用 screencapture -l 截
+    Navigator.shared.watermark.gemini.items = watermark.gemini.items
+    Navigator.shared.path = [.watermark]
+    try await Task.sleep(for: .seconds(1))
+    if let main = NSApp.windows.first(where: { $0.isVisible && $0.title == "去水印" }) {
+      try "\(main.windowNumber)".write(
+        to: folder.appending(path: "main-window.txt"), atomically: true, encoding: .utf8)
+      try await Task.sleep(for: .seconds(8))
+    }
+    Navigator.shared.path = []
 
     let movie = samples.appending(path: "录屏.mov")
     try await makeTestVideo(at: movie)
@@ -100,6 +120,33 @@ struct SnapshotProbeTests {
       CGImageDestinationCreateWithURL(
         folder.appending(path: "erase-result.png") as CFURL, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, crop, nil)
+    #expect(CGImageDestinationFinalize(destination))
+  }
+
+  private func writeSample(_ url: URL, marked: Bool) throws {
+    let (width, height) = (640, 400)
+    let context = try #require(
+      CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    let gradient = try #require(
+      CGGradient(
+        colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+        colors: [
+          CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1),
+          CGColor(red: 0.9, green: 0.5, blue: 0.3, alpha: 1),
+        ]
+          as CFArray, locations: nil))
+    context.drawLinearGradient(
+      gradient, start: .zero, end: CGPoint(x: width, y: height), options: [])
+    if marked {
+      context.setFillColor(CGColor(gray: 1, alpha: 0.9))
+      context.fillEllipse(in: CGRect(x: width - 60, y: 20, width: 32, height: 32))
+    }
+    let destination = try #require(
+      CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, try #require(context.makeImage()), nil)
     #expect(CGImageDestinationFinalize(destination))
   }
 

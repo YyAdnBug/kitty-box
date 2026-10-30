@@ -58,4 +58,14 @@ import SwiftUI
     openWindow?(id: KittyBoxApp.windowID)
     NSApp.activate()
   }
+
+  /// ⌘V 粘贴进来的文件（Paste）：在工具页就交给这个工具，在首页照拖进来的分派
+  func paste(_ urls: [URL]) {
+    if let tool = path.last {
+      open(tool, with: urls)
+    } else {
+      route(urls)
+    }
+    openWindow?(id: KittyBoxApp.windowID)
+  }
 }

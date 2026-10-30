@@ -9,8 +9,12 @@ enum Style {
   // MARK: 圆角（一律 continuous）
 
   enum Radius {
+    /// 工具页的拖放区、拖着经过时整页的描边、对比图的外框
+    static let panel: CGFloat = 16
     /// 卡片、输入框、选中高亮
     static let card: CGFloat = 10
+    /// 缩略图、对比图上的小标签
+    static let control: CGFloat = 6
     /// 色块（App 图标比例）：18 → 4、24 → 5.5、30 → 7、40 → 9
     static func tile(_ side: CGFloat) -> CGFloat { side * 0.225 }
   }

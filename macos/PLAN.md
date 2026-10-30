@@ -99,6 +99,14 @@
   - 原计划写 Metal 的 Core Image 核，2026-10-30 实测 Xcode 27 没装 Metal 工具链（要 `xcodebuild -downloadComponent MetalToolchain` 另下），为了不给编译多加前提改成这样；只补一小块，CPU 够快。
 - 音频：导出会话会重新编码成 AAC（高质量），不是原样带过（`ponytail:`；要原样得换成 AVAssetReader / Writer）。
 
+### 界面（2026-10-30 用户要求重做：原来的样子不好看、有些操作没顾到）
+- 对标：工具箱首页和分组表单照系统设置；拖放区、文件列表照常见的批量转换 / 压图工具；前后对比照常见的去水印、修图工具的「拖中间的线」。界面文案里不写这些产品的名字。
+- **工具栏用紧凑样式**（`.windowToolbarStyle(.unifiedCompact)`）：标准样式在 26 上返回按钮是 36 pt 的玻璃圆，把标题栏撑到约 52 pt；紧凑的约 38 pt，按钮也小。去水印的三个模式放进工具栏中间。
+- **首页**：一句标题「要处理什么文件？」+ 一行说明，四个工具两行两列的卡片（家族色块 + 名字 + 一行说明 + 右箭头），内容最宽 640 居中。
+- **工具页统一的骨架**：空着时整页是拖放区（家族色圆底符号、标题、说明、「选择文件…」、「或按 ⌘V 粘贴」）；有东西了是列表（带缩略图）或分组表单（打包页）；底部一条操作栏（工具栏材质、顶上分隔线），左边状态 / 说明、右边主按钮。文件拖着经过整页时描一圈家族色。做完 / 没做成的那行只染图标（绿勾 / 红叹号），字用次要色。
+- **⌘V 粘贴**：编辑菜单的「粘贴」换成自己的（同组的剪切、拷贝、全选照系统的发给响应链），输入框里照常粘贴文字；别处把剪贴板里的东西交给工具——在工具页交给这个工具，在首页照拖进来的分派。访达里拷贝的文件原样交出去；只有图片数据（截图到剪贴板、浏览器里「拷贝图像」）时，按原格式存成「下载」里的「粘贴的图片 日期 时间.扩展名」（重名加「 2」）再交出去，结果就放在它旁边。剪贴板里什么都收不了时响一声。
+- **前后对比**：Gemini 角标左边是这批图、右边是选中那张的预览，去好的就是前后对比；画笔擦除每擦完一次、视频台标导出好了，画布自动换成前后对比（画笔擦除比最早的原图，视频比原视频和导出的第一帧），底栏「对比」开关关掉才能接着涂 / 框。对比：两张叠在一起，线左边是原图、右边是去掉之后的，在图上任意处按下左右拖都能挪线；左上「原图」、右上「去水印后」两个小标签。预览按长边 2400 解（`ponytail:`，要看 1:1 细节再加缩放）。
+
 ## 3. 架构与文件表
 
 一个 App target `KittyBox`，加一个测试 target `KittyBoxTests`。
@@ -112,10 +120,10 @@
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyBoxApp.swift`（`@main`，主窗口）、`AppDelegate.swift`（`application(_:open:)`：拖到程序坞图标上、「打开方式」选了本 App 的文件交给 Navigator；能收哪些写在 `Config/Info.plist` 的 `CFBundleDocumentTypes`：压缩包 Alternate，其余 None） |
-| `Shell/` | `HomeView.swift`（四格首页，照 Kitty Tools 的 HomePanel；文件拖到哪一格交给哪个工具）、`Navigator.swift`（首页导航 + 拖进来的文件往哪送：全是压缩包就解压，里面有图片就回首页、顶上一条提示让你点一格交给它，别的交给打包；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`ImageBatch.swift`（一批图一张一张处理的列表模型和一行的样子：图片转换和 Gemini 角标共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
+| `Shell/` | `HomeView.swift`（四格首页，两行两列的卡片；文件拖到哪一格交给哪个工具）、`DropZone.swift`（工具页空着时的拖放区、整页收拖放的描边、底部操作栏）、`Paste.swift`（⌘V：剪贴板里的文件或图片数据交给 Navigator）、`FileThumb.swift`（缩略图：列表的一行、去水印预览共用）、`ResultLine.swift`（做完 / 没做成的那一行字）、`Navigator.swift`（首页导航 + 拖进来的文件往哪送：全是压缩包就解压，里面有图片就回首页、顶上一条提示让你点一格交给它，别的交给打包；粘贴进来的文件在工具页交给这个工具；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`ImageBatch.swift`（一批图一张一张处理的列表模型和一行的样子：图片转换和 Gemini 角标共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
 | `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、解完的清理和挪位置）、`PackView.swift`（打包页和它的 PackModel）、`UnpackView.swift`（解压页和它的 UnpackModel：一个接一个解、就地问密码） |
 | `ImageConvert/` | `ImageConverter.swift`（ImageIO 读写、转正方向、图标格式）、`ConvertView.swift`（转换页和它的 ConvertModel） |
-| `Watermark/` | `GeminiMark.swift`（找星标、反解、另存）、`VideoDelogo.swift`（第一帧、补像素、导出）、`Inpainter.swift`（LaMa：裁、补、羽化贴回）、`EraseCanvas.swift`（画笔擦除：涂、撤销、擦除、存成）、`WatermarkView.swift`（去水印页：三个模式，和 Gemini 那一节）、`VideoMarkView.swift`（视频台标：第一帧上拖框、导出） |
+| `Watermark/` | `GeminiMark.swift`（找星标、反解、另存）、`VideoDelogo.swift`（第一帧、补像素、导出）、`Inpainter.swift`（LaMa：裁、补、羽化贴回）、`EraseCanvas.swift`（画笔擦除：涂、撤销、擦除、存成）、`WatermarkView.swift`（去水印页：三个模式，和 Gemini 那一节）、`VideoMarkView.swift`（视频台标：第一帧上拖框、导出）、`CompareSlider.swift`（前后对比：拖中间的线） |
 | `Resources/` | `Assets.xcassets`（小猫图标）、`gemini-alpha-*.bin`、`7zz-LICENSE.txt`、`gemini-watermark-LICENSE.txt`；`changelog.json` 第一次发版时加 |
 | `macos/` | `Config/{Base,Debug,Release}.xcconfig`（`Tests.xcconfig` M1 加）、`build-dmg.sh`、`fetch-vendor.sh`（拉 7zz 和模型到被忽略的 `Vendor/`，7zz 的许可证写到 `Resources/7zz-LICENSE.txt` 入库）、`brand-icons.swift`（同一只小黑猫扒着纸箱，青绿底板） |
 | 仓库根目录 | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/box-native.mdc`、`.gitignore` |
@@ -135,8 +143,9 @@
 - `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走；外加名字的纯函数；
 - `ImageConverterTests`：10 种格式各转一遍（类型、尺寸、JPEG 透明处是白的、图标是正方形）、拍摄信息带过去和转正方向、动图留着每一帧、能读什么；
 - `NavigatorTests`：拖进来的文件往哪送、哪几格能收；
+- `PasteTests`：剪贴板里的文件原样交出去、只有图片数据时按原格式存成文件（重名不覆盖）、只有文字时什么都不交、粘贴到工具页交给这个工具；用自己起名的剪贴板，不碰用户的；
 - `UpdaterTests`：latest release 的 JSON 怎么认、版本号按数字比；
-- `SnapshotProbeTests`：屏外截图自检（照 Kitty Tools），把各工具页（打包、解压、转换、去水印的 Gemini 和视频台标、关于窗口）带着示例数据画成 PNG；画笔擦除页屏外抓不到（整页发黑），改成开一扇真窗口停 8 秒、由外面 `screencapture -l` 截，再在系统壁纸上真擦一处存 `erase-result.png`；截图固定浅色外观（系统按日落切深色时屏外画出来白底白字）；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
+- `SnapshotProbeTests`：屏外截图自检（照 Kitty Tools），把各工具页（打包、解压、转换、去水印的 Gemini 和视频台标、关于窗口）带着示例数据画成 PNG；画笔擦除页屏外抓不到（整页发黑），改成开一扇真窗口停 8 秒、由外面 `screencapture -l` 截，再在系统壁纸上真擦一处存 `erase-result.png`；工具栏屏外也画不出来，让 App 的主窗口进去水印页停 8 秒，窗口编号写进 `main-window.txt` 由外面截；截图固定浅色外观（系统按日落切深色时屏外画出来白底白字）；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
 
 ## 4. 签名与打包
 
@@ -158,6 +167,7 @@
 - **M4 画笔擦除**（2026-10-30 做完，共 42 个单测）：选定模型并写进 `fetch-vendor.sh` → `Inpainter` → 画笔界面 → Gemini 认不出时一键改用画笔擦除。**待你手测**：在真图上涂一处水印擦一下。
 - **0.1.0 打好包、没发布**（2026-10-30）：Updater + 关于窗口 + changelog → `build-dmg.sh`（DMG 约 200 MB，带背景和摆位）。GitHub release `macos-v0.1.0` 发了又删了（连 tag）：你还没手测，不该发；main 的 README 也改回「暂时没有可下载的版本」。**等你用本地的 DMG 手测完、明确说发，再重新出包发布。**
   - 同日用户嫌安装包大（约 200 MB，几乎全是模型），改成模型用时下载，重新出了本地包。
+- **界面重做**（2026-10-30 做完）：紧凑工具栏、首页两行两列、工具页拖放区 + 底部操作栏、打包页分组表单、缩略图、⌘V 粘贴、去水印前后对比（见 §2「界面」）。**待你手测**：⌘V 粘贴文件和截图、拖动对比线（这两样只能真按键 / 真拖，自检没覆盖）。
 
 ## 6. 第一版不做
 

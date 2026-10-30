@@ -1,6 +1,7 @@
 // 画笔擦除（D2、D3）：拖进一张图，在上面涂住要擦掉的地方（能调笔刷、⌘Z 撤销），点「擦除」交给 Inpainter 补；
 // 擦完还能接着涂下一处，撤销也能退回上一次擦除。满意了点「存成」，另存成「原名-去水印」，原图不动。
 // 涂的笔画存原图的像素坐标；笔刷大小按屏幕上看着的粗细，落笔时换算成原图像素。
+// 每擦完一次画布换成前后对比（最早的原图和现在的，拖中间的线看），点「对比」关掉接着涂。
 // 补图模型第一次用要先下载（LaMaModel，约 216 MB）：没下时页面顶上一条「下载」，下好之前能涂、不能擦。
 
 import AppKit
@@ -30,6 +31,8 @@ import UniformTypeIdentifiers
   private(set) var history: [CGImage] = []
   var strokes: [Stroke] = []
   private(set) var state = State.idle
+  /// 画布上是不是在前后对比（擦完自动打开；关掉才能接着涂）
+  var comparing = false
 
   var busy: Bool {
     switch state {
@@ -43,6 +46,7 @@ import UniformTypeIdentifiers
     image = nil
     history = []
     strokes = []
+    comparing = false
     state = .loading
     Task {
       let loaded = await Self.read(url)
@@ -61,6 +65,7 @@ import UniformTypeIdentifiers
       history.append(image)
       self.image = result
       strokes = []
+      comparing = true
       state = .idle
     } catch {
       state = .failed(error.localizedDescription)
@@ -73,6 +78,7 @@ import UniformTypeIdentifiers
       strokes.removeLast()
     } else if let previous = history.popLast() {
       image = previous
+      if history.isEmpty { comparing = false }
     }
   }
 
@@ -126,20 +132,24 @@ struct EraseCanvas: View {
   var body: some View {
     VStack(spacing: 0) {
       if download.state != .ready {
-        modelBanner.padding(.horizontal, 20).padding(.vertical, 10)
+        modelBanner.padding(.horizontal, 16).padding(.vertical, 10)
         Divider()
       }
       if model.source == nil {
-        DropHint(text: "把图片拖到这里，涂住要擦掉的地方", symbol: "paintbrush.pointed") { choosing = true }
-          .padding(20)
-        Spacer()
+        DropZone(
+          symbol: "paintbrush.pointed.fill", color: Tool.watermark.color, title: "拖入一张图",
+          detail: "涂住要擦掉的水印、路人或杂物，自动补上周围的样子；结果另存成「原名-去水印」"
+        ) { choosing = true }
       } else if let image = model.image {
-        canvas(image).padding(16)
+        if model.comparing, let original = model.history.first {
+          CompareSlider(before: original, after: image).padding(16)
+        } else {
+          canvas(image).padding(16)
+        }
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-      Divider()
-      footer.padding(.horizontal, 20).padding(.vertical, 12)
+      footer.bottomBar()
     }
     .fileImporter(isPresented: $choosing, allowedContentTypes: [.image]) {
       if case .success(let url) = $0 { model.load(url) }
@@ -243,6 +253,10 @@ struct EraseCanvas: View {
           .keyboardShortcut("z", modifiers: .command)
           .disabled(model.busy || (model.strokes.isEmpty && model.history.isEmpty))
         Spacer()
+        if !model.history.isEmpty {
+          Toggle("对比", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
+            .toggleStyle(.button)
+        }
         if model.source != nil { Button("换一张…") { choosing = true }.disabled(model.busy) }
         Button("存成「-去水印」") { model.save() }.disabled(model.busy || model.history.isEmpty)
         if model.busy { ProgressView().controlSize(.small) }
@@ -251,28 +265,29 @@ struct EraseCanvas: View {
           .keyboardShortcut(.defaultAction)
           .disabled(model.strokes.isEmpty || model.busy || download.state != .ready)
       }
-      switch model.state {
-      case .saved(let url):
-        HStack {
-          Label("存成「\(url.lastPathComponent)」", systemImage: "checkmark.circle.fill")
-            .foregroundStyle(.green)
-          Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-            .buttonStyle(.link)
+      Group {
+        switch model.state {
+        case .saved(let url):
+          DoneLine(text: "存成「\(url.lastPathComponent)」", url: url)
+        case .failed(let reason):
+          FailLine(reason: reason)
+        case .erasing:
+          Text("正在补，一处大约一秒…").foregroundStyle(.secondary)
+        case .idle, .loading:
+          Text(hint).foregroundStyle(.secondary)
         }
-        .font(.caption)
-      case .failed(let reason):
-        Label(reason, systemImage: "exclamationmark.triangle.fill").font(.caption)
-          .foregroundStyle(.red)
-      case .erasing:
-        Text("正在补，一处大约一秒…").font(.caption).foregroundStyle(.secondary)
-      case .idle, .loading:
-        Text(
-          model.history.isEmpty
-            ? "涂住要擦掉的地方（涂得比水印宽一点），点「擦除」；不满意就撤销，接着涂。"
-            : "擦了 \(model.history.count) 次。还能接着涂；满意了点「存成」，原图不动。"
-        )
-        .font(.caption).foregroundStyle(.secondary)
       }
+      .font(.caption)
+    }
+  }
+
+  private var hint: String {
+    if model.history.isEmpty {
+      "涂住要擦掉的地方（涂得比水印宽一点），点「擦除」；不满意就撤销，接着涂。"
+    } else if model.comparing {
+      "擦了 \(model.history.count) 次。拖中间的线对比原图；点「对比」关掉能接着涂，满意了点「存成」。"
+    } else {
+      "擦了 \(model.history.count) 次。还能接着涂；满意了点「存成」，原图不动。"
     }
   }
 }

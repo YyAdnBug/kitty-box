@@ -1,7 +1,9 @@
 // 画笔擦除的补图模型（D2，2026-10-30 用户改成「用时下载」）：不随包——它一个就占了安装包的 207 MB——第一次用画笔擦除时下载。
 // 来源是 Hugging Face 上 mlboydaisuke/LaMa-CoreML 固定的 revision（FP32，M4 选型见 PLAN §2「画笔擦除」），三个文件各按
 // SHA256 校验，对不上就不装；下好用 Core ML 编译，放进「~/Library/Application Support/Kitty Box/Models/LaMa.mlmodelc」，
-// 以后不用再下、不用联网。正式版和开发版共用这一份。App 自己用 URLSession 下载，不带隔离标记。许可证 Apache-2.0
+// 以后不用再下、不用联网。正式版和开发版共用这一份。Hugging Face 连不上（比如在国内）时自动换镜像 hf-mirror.com 再下一遍
+// （2026-10-30 实测同一个 revision 的文件一样，反正每个都按 SHA256 校验，镜像给错了也装不上）。
+// App 自己用 URLSession 下载，不带隔离标记。许可证 Apache-2.0
 // （Resources/lama-LICENSE.txt）。LaMaDownload 是界面上看的那份状态（没下 / 下载中 / 好了 / 没成）。
 
 import CoreML
@@ -16,10 +18,13 @@ nonisolated enum LaMaModel {
     let size: Int64
   }
 
-  static let source = URL(
-    string:
-      "https://huggingface.co/mlboydaisuke/LaMa-CoreML/resolve/5ed76e3799ab4cad31381750d29880c267477e18/LaMa.mlpackage/"
-  )!
+  /// 按顺序试：Hugging Face 本站，下不了再换镜像
+  static let sources = ["https://huggingface.co", "https://hf-mirror.com"].map {
+    URL(
+      string: $0
+        + "/mlboydaisuke/LaMa-CoreML/resolve/5ed76e3799ab4cad31381750d29880c267477e18/LaMa.mlpackage/"
+    )!
+  }
   static let files = [
     File(
       path: "Manifest.json",
@@ -64,7 +69,7 @@ nonisolated enum LaMaModel {
       for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: folder, create: true)
     defer { try? fileManager.removeItem(at: staging) }
     let package = staging.appending(path: "LaMa.mlpackage")
-    try await fetch(files, from: source, into: package, progress: progress)
+    try await fetch(files, fromFirstOf: sources, into: package, progress: progress)
     let compiled = try await MLModel.compileModel(at: package)
     defer { try? fileManager.removeItem(at: compiled) }
     if fileManager.fileExists(atPath: installed.path) {
@@ -72,6 +77,25 @@ nonisolated enum LaMaModel {
     } else {
       try fileManager.moveItem(at: compiled, to: installed)
     }
+  }
+
+  /// 一个地址一个地址试：前一个下到一半失败（连不上、服务器报错、校验不过），清掉已经下的、进度归零，换下一个；都不行就报最后那个错
+  static func fetch(
+    _ files: [File], fromFirstOf sources: [URL], into package: URL,
+    progress: @escaping @Sendable (Double) -> Void
+  ) async throws {
+    var failure: any Error = Failure.download("没有可用的下载地址")
+    for source in sources {
+      do {
+        try await fetch(files, from: source, into: package, progress: progress)
+        return
+      } catch {
+        failure = error
+        try? FileManager.default.removeItem(at: package)
+        progress(0)
+      }
+    }
+    throw failure
   }
 
   /// 一个个下到 package 里（保持原来的目录结构），每个都按 SHA256 校验；对不上就停，已经下的留在 package 里由调用方删

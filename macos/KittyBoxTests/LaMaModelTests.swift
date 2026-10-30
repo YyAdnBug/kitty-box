@@ -1,4 +1,5 @@
-// LaMaModel：用本地 file:// 地址模拟下载——按 SHA256 校验、照原来的目录结构放好、进度一路报到 1；对不上就报错不放。
+// LaMaModel：用本地 file:// 地址模拟下载——按 SHA256 校验、照原来的目录结构放好、进度一路报到 1；对不上就报错不放；
+// 第一个地址下不了就换下一个（Hugging Face 连不上时换镜像）。
 // 真从 Hugging Face 下一遍（约 216 MB，下载 → 校验 → 编译 → 放进 Application Support）平时跳过，要验时：
 // TEST_RUNNER_KITTY_LIVE_MODEL=1 xcodebuild -project macos/KittyBox.xcodeproj -scheme KittyBox \
 //   test -only-testing:KittyBoxTests/LaMaModelTests
@@ -59,6 +60,27 @@ struct LaMaModelTests {
       }
     }
     #expect(!FileManager.default.fileExists(atPath: package.appending(path: files[1].path).path))
+  }
+
+  @Test func fallsBackToNextSource() async throws {
+    let root = try sandbox()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let files = try serve(in: root)
+    let package = root.appending(path: "LaMa.mlpackage")
+    // 第一个地址什么都没有（像连不上的本站），第二个才有
+    try await LaMaModel.fetch(
+      files, fromFirstOf: [root.appending(path: "nowhere/"), root.appending(path: "server/")],
+      into: package
+    ) { _ in }
+    for file in files {
+      #expect(try LaMaModel.sha256(of: package.appending(path: file.path)) == file.sha256)
+    }
+    // 都不行：报错
+    await #expect(throws: (any Error).self) {
+      try await LaMaModel.fetch(
+        files, fromFirstOf: [root.appending(path: "nowhere/")], into: root.appending(path: "x")
+      ) { _ in }
+    }
   }
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_MODEL"] != nil))

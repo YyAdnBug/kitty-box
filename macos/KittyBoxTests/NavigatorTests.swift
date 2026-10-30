@@ -112,4 +112,25 @@ final class NavigatorTests {
     #expect(navigator.tool == .convert)
     #expect(navigator.convert.items.map(\.source) == [photo])
   }
+
+  /// 访达扩展交过来的网址：scheme 是 App 的 bundle id，工具名、文件路径（中文、空格）都还原得出来；别人的网址、缺东西的不认
+  @Test func finderLinkNamesToolAndFiles() throws {
+    let scheme = try #require(Bundle.main.bundleIdentifier)
+    var link = URLComponents()
+    link.scheme = scheme
+    link.host = "open"
+    link.queryItems = [
+      URLQueryItem(name: "tool", value: "videoConvert"),
+      URLQueryItem(name: "file", value: "/tmp/假期 视频.mov"),
+      URLQueryItem(name: "file", value: "/tmp/a&b=c.mp4"),
+    ]
+    let url = try #require(link.url)
+    let request = try #require(Services.request(from: url))
+    #expect(request.tool == .videoConvert)
+    #expect(request.files.map(\.path) == ["/tmp/假期 视频.mov", "/tmp/a&b=c.mp4"])
+    #expect(Services.request(from: URL(string: "other://open?tool=pack&file=/tmp/a")!) == nil)
+    #expect(Services.request(from: URL(string: "\(scheme)://open?tool=nope&file=/tmp/a")!) == nil)
+    #expect(Services.request(from: URL(string: "\(scheme)://open?tool=pack")!) == nil)
+    #expect(Services.request(from: URL(filePath: "/tmp/a.zip")) == nil)
+  }
 }

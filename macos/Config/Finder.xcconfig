@@ -1,0 +1,23 @@
+// 访达扩展 target（KittyBoxFinder，M9：右键菜单第一层的「用 Kitty Box …」和「新建文件」）：只覆盖和 App 不同的，
+// 其余沿用 project 层的 Debug / Release.xcconfig（Base.xcconfig）
+PRODUCT_NAME = KittyBoxFinder
+PRODUCT_MODULE_NAME = KittyBoxFinder
+// App 的 id 加 .finder：扩展靠它反推 App 网址的 scheme（FinderMenu）
+PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX).finder
+INFOPLIST_FILE = Config/Finder-Info.plist
+// 系统设置的扩展列表里显示的名字（Debug 是 Kitty Box Dev）
+INFOPLIST_KEY_CFBundleDisplayName = $(APP_PRODUCT_NAME)
+INFOPLIST_KEY_LSApplicationCategoryType =
+ASSETCATALOG_COMPILER_APPICON_NAME =
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME =
+ENABLE_PREVIEWS = NO
+// ponytail: 这个 target 用 Swift 5 语言模式（App 是 Swift 6）。FinderSync 的头文件没有并发标注，访达要菜单的 menu(for:)
+// 是 nonisolated 的，菜单（NSMenu）却只能在 MainActor 上建；Swift 6 下只有 nonisolated(unsafe) / @unchecked Sendable
+// 才绕得过去（红线禁止）。Swift 5 模式照 Xcode 的访达扩展模板，把它当作 MainActor（访达确实在主线程上调）。
+// 等 FinderSync 加上 MainActor 标注再改回 6.0。只有一个文件、不碰并发
+SWIFT_VERSION = 5.0
+// 访达扩展必须在沙盒里；新建文件要写用户的文件夹，例外写在 entitlements 里
+ENABLE_APP_SANDBOX = YES
+CODE_SIGN_ENTITLEMENTS = Config/Finder.entitlements
+SKIP_INSTALL = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks

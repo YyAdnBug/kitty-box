@@ -30,9 +30,11 @@ extension Thumbnail {
 }
 
 enum FileFacts {
-  /// 文件大小；文件夹、读不到是 nil（同访达，文件夹不算大小）
+  /// 文件大小；文件夹、读不到是 nil（同访达，文件夹不算大小）。替身（符号链接）算它指向的那个文件
   @concurrent nonisolated static func bytes(_ url: URL) async -> Int64? {
-    let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
+    let values = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [
+      .fileSizeKey, .isDirectoryKey,
+    ])
     guard values?.isDirectory != true, let size = values?.fileSize else { return nil }
     return Int64(size)
   }

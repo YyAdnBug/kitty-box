@@ -6,7 +6,7 @@
 
 **Kitty Box**：纯原生 macOS 文件工具箱，Kitty 家族的一员（结构照 Kitty Tools：`~/Desktop/yy/Codes/Tauri/kitty-tools-macos`，`macos` 分支）。基本自用，只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
-- **功能**（第一版）：打包（zip / 7z，忽略清单）、解压（GBK 文件名不乱码，带密码的 zip / 7z / RAR）、图片转换（ImageIO）、视频转换、修图（去背景、AI 水印、画笔擦除、视频台标），有设置窗口（⌘,）。
+- **功能**（第一版）：打包（zip / 7z，忽略清单）、解压（GBK 文件名不乱码，带密码的 zip / 7z / RAR）、图片转换（ImageIO）、视频转换、修图（去背景、AI 水印、画笔擦除、视频台标），有设置窗口（⌘,）；访达右键菜单第一层（访达扩展：「用 Kitty Box …」、文件夹空白处「新建文件」）。
 - **形态**：普通窗口 App（有程序坞图标，文件能拖上去），左边侧边栏列出工具（压缩 / 图片 / 去水印，品牌粉选中），右边是工具页（页头带操作和品牌粉主按钮 + 表格 + 右边一栏选项卡片 + 底下状态栏，照 Kitty Tools 设置窗），见 PLAN §2「界面」。
 - **方案**：`macos/PLAN.md` 是行为和做法的唯一来源；2026-10-30 拍板页 https://claude.ai/artifact/HtJqQ4iFqqpFnS1ZoZ5Gxw（31 项，「全部按推荐」），本地副本 `macos/build/research/plan-2026-10-30/decisions.html`（不入库）。
 - **进度**：分批做，一批一个提交，见 PLAN §5。
@@ -15,10 +15,10 @@
 
 ## 技术栈
 
-- Swift 6 语言模式，默认 `MainActor` 隔离 + approachable concurrency。
-- SwiftUI + AppKit；ImageIO、Core Image、Core ML、AVFoundation、QuickLook（空格快速查看）、Vision（去背景、找 AI 水印的字）、AVKit（视频预览和剪辑条）。
+- Swift 6 语言模式，默认 `MainActor` 隔离 + approachable concurrency（访达扩展 target 例外用 Swift 5，见红线 §3）。
+- SwiftUI + AppKit；ImageIO、Core Image、Core ML、AVFoundation、QuickLook（空格快速查看）、Vision（去背景、找 AI 水印的字）、AVKit（视频预览和剪辑条）、FinderSync（访达扩展）。
 - 系统命令：`/usr/bin/tar`（zip 解压）。
-- 第三方：只有随包的 `7zz`（7-Zip 26.05，`fetch-vendor.sh` 按 SHA256 拉，不入库）；数据文件：Gemini α 图（随包）、补图模型（快速 MI-GAN / 标准 LaMa / 高清 Big LaMa 2048，都不随包，用到时下载到 Application Support，`Watermark/InpaintModel.swift`）。
+- 第三方：只有随包的 `7zz`（7-Zip 26.05，`fetch-vendor.sh` 按 SHA256 拉，不入库）；数据文件：Gemini α 图（随包）、补图模型（快速 MI-GAN / 标准 LaMa / 高清 Big LaMa 2048）和抠图模型（BiRefNet，去背景「精细」），都不随包，用到时下载到 Application Support，`Watermark/AIModel.swift`；新建文件的模板（自己做的，随访达扩展）。
 - Xcode 27 工程，构建设置全在 xcconfig；`hdiutil` 打 DMG；Apple Development 签名（Team `HTX9F4KG39`），不公证。
 
 ## 目录结构
@@ -26,10 +26,12 @@
 ```
 macos/
 ├── KittyBox.xcodeproj/      # 共享 scheme：KittyBox；KittyBox/ 是同步文件夹
-├── KittyBox/                # App/ Shell/ Resources/（以后 Archive/ ImageConvert/ Watermark/，见 PLAN §3）
-├── Config/                  # Base / Debug / Release.xcconfig、Info.plist（局部）、dmg-background.tiff
+├── KittyBox/                # App/ Shell/ Archive/ ImageConvert/ VideoConvert/ Cutout/ Watermark/ Resources/（见 PLAN §3）
+├── KittyBoxTests/           # 单测（Swift Testing）
+├── KittyBoxFinder/          # 访达扩展（右键第一层、新建文件）和新建文件的模板
+├── Config/                  # Base / Debug / Release / Tests / Finder.xcconfig、Info.plist（局部）、Finder-Info.plist、Finder.entitlements、dmg-background.tiff
 ├── Vendor/                  # fetch-vendor.sh 拉下来的 7zz（不入库）
-├── fetch-vendor.sh          # 拉 7zz，按 SHA256 校验（LaMa 模型 App 用时自己下）
+├── fetch-vendor.sh          # 拉 7zz，按 SHA256 校验（模型 App 用时自己下）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + 更新用 zip → notes
 ├── brand-icons.swift        # 品牌图标（小黑猫扒着纸箱）+ DMG 背景
 ├── .swift-format
@@ -49,8 +51,8 @@ macos/fetch-vendor.sh
 xcodebuild -project macos/KittyBox.xcodeproj -scheme KittyBox build
 
 # 格式：lint 无输出才算通过；format 就地改写
-xcrun swift-format lint --strict -r macos/KittyBox
-xcrun swift-format format -i -r macos/KittyBox
+xcrun swift-format lint --strict -r macos/KittyBox macos/KittyBoxTests macos/KittyBoxFinder
+xcrun swift-format format -i -r macos/KittyBox macos/KittyBoxTests macos/KittyBoxFinder
 
 # 签名自检：输出要含 anchor apple generic 和 bundle id，不能是 cdhash
 codesign -d -r- "<App 路径>"

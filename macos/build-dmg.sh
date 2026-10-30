@@ -30,6 +30,10 @@ codesign --verify --strict \
 [[ "$(codesign -dv "$APP/Contents/MacOS/7zz" 2>&1)" == *"(runtime)"* ]] || { echo "7zz 没开强化运行时"; exit 1; }
 # 画笔擦除的 LaMa 模型不随包（第一次用时下载）：别不小心打进来
 [[ ! -e "$APP/Contents/Resources/LaMa.mlmodelc" ]] || { echo "LaMa 模型不该打进包"; exit 1; }
+# 访达扩展（M9）：在 PlugIns 里、本团队签名、开着沙盒（访达扩展必须）
+EXT="$APP/Contents/PlugIns/KittyBoxFinder.appex"
+codesign --verify --strict -R '=anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' "$EXT"
+[[ "$(codesign -d --entitlements - "$EXT" 2>&1)" == *app-sandbox* ]] || { echo "访达扩展没开沙盒"; exit 1; }
 ditto "$APP" "$OUT/dmg/$NAME.app" && ln -s /Applications "$OUT/dmg/Applications"
 DMG="$OUT/${NAME}_${VERSION}_arm64.dmg"
 if [[ "${DMG_LAYOUT:-1}" == 0 ]]; then

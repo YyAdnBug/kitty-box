@@ -40,6 +40,19 @@
 			</array>
 		</dict>
 	</array>
+	<!-- App 自己的网址（M9）：scheme 就是 bundle id（Debug、Release 各认各的）。访达扩展（KittyBoxFinder）点了「用 Kitty Box …」
+	     用它把工具和文件交给 App：<id>://open?tool=pack&file=/a&file=/b（AppDelegate → Services.request） -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			</array>
+		</dict>
+	</array>
 	<!-- 访达「服务」菜单（M5，App/Services.swift）：右键 › 服务。NSRequiredContext 写上（空的）才默认开着；
 	     NSSendFileTypes 决定对什么文件出现：解压只对压缩包，转换、去水印、去背景只对图片 -->
 	<key>NSServices</key>

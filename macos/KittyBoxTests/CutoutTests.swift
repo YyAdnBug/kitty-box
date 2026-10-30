@@ -1,5 +1,6 @@
-// Cutout：系统自带的鹦鹉头像（/Library/User Pictures/Animals/Parrot.heic，先拷到临时目录，结果写在它旁边）去背景：
-// 透明的存成 PNG、四角是透明的、中间（鹦鹉）不透明；白底的四角是白的；裁到主体时比原图小。
+// Cutout：系统自带的鹦鹉头像（/Library/User Pictures/Animals/Parrot.heic，先拷到临时目录，结果写在它旁边）去背景，
+// 系统、精细两种抠法各一遍：透明的存成 PNG、四角是透明的、中间（鹦鹉）不透明；白底的四角是白的；裁到主体时比原图小。
+// 精细要抠图模型：下载过才跑；TEST_RUNNER_KITTY_LIVE_MODEL=1 时没下过就先真下一次（约 82 MB）。
 
 import CoreGraphics
 import Foundation
@@ -30,8 +31,14 @@ struct CutoutTests {
       })
   }
 
-  @Test(.enabled(if: FileManager.default.fileExists(atPath: parrot.path)))
-  func removesBackground() async throws {
+  @Test(
+    .enabled(if: FileManager.default.fileExists(atPath: parrot.path)),
+    arguments: [Cutout.Engine.system, .model])
+  func removesBackground(_ engine: Cutout.Engine) async throws {
+    if engine == .model, !AIModel.cutout.isInstalled {
+      guard ProcessInfo.processInfo.environment["KITTY_LIVE_MODEL"] != nil else { return }
+      try await AIModel.cutout.install { _ in }
+    }
     let root = FileManager.default.temporaryDirectory.appending(path: "kittybox-tests-\(UUID())")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -40,18 +47,20 @@ struct CutoutTests {
     try FileManager.default.copyItem(at: parrot.resolvingSymlinksInPath(), to: source)
     let original = try image(at: source)
 
-    let clear = try await Cutout.remove(source, background: .transparent, crop: false)
+    let clear = try await Cutout.remove(
+      source, background: .transparent, crop: false, engine: engine)
     #expect(clear.lastPathComponent == "鹦鹉-去背景.png")
     let cut = try image(at: clear)
     #expect(cut.width == original.width && cut.height == original.height)
     #expect(pixel(cut, x: 2, y: 2)[3] == 0)
     #expect(pixel(cut, x: cut.width / 2, y: cut.height / 2)[3] == 255)
 
-    let white = try image(at: try await Cutout.remove(source, background: .white, crop: false))
+    let white = try image(
+      at: try await Cutout.remove(source, background: .white, crop: false, engine: engine))
     #expect(pixel(white, x: 2, y: 2) == [255, 255, 255, 255])
 
     let cropped = try image(
-      at: try await Cutout.remove(source, background: .transparent, crop: true))
+      at: try await Cutout.remove(source, background: .transparent, crop: true, engine: engine))
     #expect(cropped.width * cropped.height < original.width * original.height)
   }
 }

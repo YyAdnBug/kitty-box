@@ -2,7 +2,9 @@
 // ⌘Z 一次退回一笔、⇧⌘Z 重做；满意了点页头「存储」，另存成「原名-去水印」，原图不动。
 // 画布能放大（捏合、⌘= / ⌘-，⌘0 回到适合窗口），放大后用触控板 / 滚轮挪；底下浮着一条控制栏：笔刷大小（[ ] 也能调）、撤销、
 // 对比（最早的原图和现在的，拖中间的线看）、缩放。涂的笔画存原图的像素坐标；笔刷大小按屏幕上看着的粗细，落笔时换算成原图像素。
-// 补图用设置 › 补图模型里选的那个（InpaintModel）；第一次用要先下载：没下时页面顶上一条「下载」「换一个模型」，下好之前不能涂。
+// 补图用设置 › 模型里选的那个（AIModel）；第一次用要先下载：没下时页面顶上一条「下载」「换一个模型」，下好之前不能涂。
+// 「选文字」（M9，用户问「不是 AI 生成的字怎么去除」）：用系统的文字识别（AIMark.lines）把图上的字一行一行框出来，点哪行擦哪行
+// （盖住那一行的一笔，走同一条补图的路，⌘Z 照样退回）；再点一下按钮回到涂抹。
 
 import AppKit
 import Observation
@@ -35,6 +37,9 @@ import UniformTypeIdentifiers
   private(set) var state = State.idle
   /// 画布上是不是在前后对比（关掉才能接着涂）
   var comparing = false
+  /// 「选文字」找到的各行字（原图像素、左上为原点）；nil 是没在选文字
+  private(set) var texts: [CGRect]?
+  private(set) var findingText = false
 
   var busy: Bool {
     switch state {
@@ -45,6 +50,7 @@ import UniformTypeIdentifiers
 
   /// 关掉这一张（读不出时回到空着的样子）
   func clear() {
+    texts = nil
     source = nil
     image = nil
     history = []
@@ -55,6 +61,7 @@ import UniformTypeIdentifiers
   }
 
   func load(_ url: URL) {
+    texts = nil
     source = url
     image = nil
     history = []
@@ -70,7 +77,7 @@ import UniformTypeIdentifiers
     }
   }
 
-  func erase(using choice: InpaintModel = .standard) async {
+  func erase(using choice: AIModel = .standard) async {
     guard let image, !strokes.isEmpty, !busy else { return }
     state = .erasing
     do {
@@ -84,6 +91,36 @@ import UniformTypeIdentifiers
     } catch {
       state = .failed(error.localizedDescription)
     }
+  }
+
+  /// 「选文字」：找出图上的字
+  func findText() async {
+    guard let image else { return }
+    texts = []
+    findingText = true
+    let found = await Self.lines(in: image)
+    findingText = false
+    if texts != nil { texts = found }
+  }
+
+  func stopFindingText() { texts = nil }
+
+  /// 点了一行字：一笔盖住它补掉
+  func erase(text box: CGRect, using choice: AIModel) async {
+    strokes = [Self.stroke(covering: box)]
+    texts?.removeAll { $0 == box }
+    await erase(using: choice)
+  }
+
+  /// 盖住一行字的一笔：横穿中线，粗 1.6 倍字高（上下各多出三成），两头的圆角也盖得住字框的四个角
+  nonisolated static func stroke(covering box: CGRect) -> Stroke {
+    Stroke(
+      points: [CGPoint(x: box.minX, y: box.midY), CGPoint(x: box.maxX, y: box.midY)],
+      width: box.height * 1.6)
+  }
+
+  @concurrent nonisolated private static func lines(in image: CGImage) async -> [CGRect] {
+    ((try? AIMark.lines(in: image)) ?? []).map(\.rect)
   }
 
   /// 先撤笔画，没有笔画了再退回上一次擦除
@@ -145,7 +182,7 @@ import UniformTypeIdentifiers
 struct EraseCanvas: View {
   @Bindable var model: EraseModel
   @Bindable private var downloads = ModelDownloads.shared
-  @AppStorage(Prefs.inpaintModel) private var choice = InpaintModel.standard
+  @AppStorage(Prefs.inpaintModel) private var choice = AIModel.standard
   /// 笔刷在屏幕上的粗细（点）
   @State private var brush: CGFloat = 32
   @State private var drawing: EraseModel.Stroke?
@@ -231,7 +268,21 @@ struct EraseCanvas: View {
       // 笔画用普通的 Path 叠上去（不用 Canvas：屏外截图自检抓不到 Canvas，整页会画坏，2026-10-30 实测）
       strokes(scale: scale)
         .modifier(Pulsing(active: model.busy && !reduceMotion))
-      if let hover, painting {
+      if let texts = model.texts {
+        ForEach(Array(texts.enumerated()), id: \.offset) { _, box in
+          Button {
+            Task { await model.erase(text: box, using: choice) }
+          } label: {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+              .fill(Color.accentColor.opacity(0.18))
+              .strokeBorder(Color.accentColor, lineWidth: 1.5)
+          }
+          .buttonStyle(.plain)
+          .frame(width: box.width * scale + 8, height: box.height * scale + 8)
+          .position(x: box.midX * scale, y: box.midY * scale)
+          .help("擦掉这行字")
+        }
+      } else if let hover, painting {
         Circle().stroke(.white, lineWidth: 1.5)
           .overlay { Circle().stroke(.black.opacity(0.5), lineWidth: 1).padding(-1) }
           .frame(width: brush, height: brush)
@@ -242,6 +293,7 @@ struct EraseCanvas: View {
     .clipShape(RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous))
     .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
     .contentShape(Rectangle())
+    // 选文字时不涂，只点框
     .gesture(
       DragGesture(minimumDistance: 0)
         .onChanged { drag in
@@ -256,7 +308,8 @@ struct EraseCanvas: View {
             Task { await model.erase(using: choice) }
           }
           drawing = nil
-        }
+        },
+      including: model.texts == nil ? .all : .subviews
     )
     .onContinuousHover { phase in
       if case .active(let point) = phase { hover = point } else { hover = nil }
@@ -300,6 +353,17 @@ struct EraseCanvas: View {
         .keyboardShortcut("z", modifiers: [.command, .shift])
         .help("重做（⇧⌘Z）")
         .disabled(model.busy || model.undone.isEmpty)
+      Toggle(
+        "选文字", systemImage: "text.viewfinder",
+        isOn: Binding(
+          get: { model.texts != nil },
+          set: { on in
+            if on { Task { await model.findText() } } else { model.stopFindingText() }
+          })
+      )
+      .toggleStyle(.button)
+      .help("找出图上的字，点哪行擦哪行")
+      .disabled(model.busy || model.comparing)
       Toggle("对比原图", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
         .toggleStyle(.button)
         .help("拖中间的线对比原图")
@@ -339,6 +403,14 @@ struct EraseCanvas: View {
       FailLine(reason: reason)
     case .erasing:
       Text("正在补，一处大约一秒…")
+    case .idle where model.texts != nil:
+      if model.findingText {
+        Text("正在找图上的字…")
+      } else if model.texts?.isEmpty == true {
+        Text("没找到字；再点一下「选文字」回到涂抹")
+      } else {
+        Text("找到 \(model.texts?.count ?? 0) 行字：点框住的那行擦掉；再点一下「选文字」回到涂抹")
+      }
     case .idle, .loading:
       Text(
         [
@@ -350,9 +422,9 @@ struct EraseCanvas: View {
   }
 }
 
-/// 补图模型还没下好时页面顶上的一条（画笔擦除、AI 水印）：说要下哪个、多大，「下载」「换一个模型…」，下载中是进度条
+/// 模型还没下好时页面顶上的一条（画笔擦除、AI 水印、去背景）：说要下哪个、多大，「下载」「换一个模型…」（补图模型才有），下载中是进度条
 struct ModelBanner: View {
-  let choice: InpaintModel
+  let choice: AIModel
   /// 一句话说用它干什么（画笔擦除不用写）
   var purpose: String?
   @Bindable private var downloads = ModelDownloads.shared
@@ -367,17 +439,17 @@ struct ModelBanner: View {
         Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
         Text(
           (purpose.map { $0 + "。" } ?? "")
-            + "要先下载补图模型「\(choice.title) · \(choice.name)」（约 \(choice.downloadSize.formatted(.byteCount(style: .file)))），之后不用联网。"
+            + "要先下载\(choice.kind)「\(choice.title) · \(choice.name)」（约 \(choice.downloadSize.formatted(.byteCount(style: .file)))），之后不用联网。"
         )
         .font(.callout)
         .fixedSize(horizontal: false, vertical: true)
         Spacer()
-        Button("换一个模型…") { openSettings() }
+        if choice != .cutout { Button("换一个模型…") { openSettings() } }
         Button("下载") { Task { await downloads.start(choice) } }.buttonStyle(BrandButtonStyle())
       }
     case .downloading(let fraction):
       ProgressView(value: fraction) {
-        Text("正在下载补图模型「\(choice.title)」· \(Int((fraction * 100).rounded()))%（下完还要编译几秒）")
+        Text("正在下载\(choice.kind)「\(choice.title)」· \(Int((fraction * 100).rounded()))%（下完还要编译几秒）")
           .font(.caption)
       }
     case .failed(let reason):

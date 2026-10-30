@@ -1,15 +1,18 @@
-// 补图模型（画笔擦除和 AI 水印共用，D2 用时下载；M7 起三个可选，设置 › 补图模型里下载、切换、删除）：
+// 用时下载的模型（都不随包，设置 › 模型里下载、删除）。补图模型（画笔擦除和 AI 水印共用，D2 用时下载；M7 起三个可选、设置里切换）：
 // - 快速：MI-GAN 512（Picsart AI Research，MIT），约 25 MB，一处零点几秒，细节一般；
 //   Core ML 版来自 Hugging Face 上 BryanHaley/photowagon-models 的 migan/MIGAN.mlpackage.zip；
 // - 标准：LaMa 800（FP32，Apache-2.0），约 216 MB，一处约 1 秒，推荐（M4 选型见 PLAN §2「画笔擦除」）；
 //   来源 mlboydaisuke/LaMa-CoreML 固定的 revision，三个文件各按 SHA256 校验；
 // - 高清：Big LaMa 2048（Apache-2.0），约 190 MB，一次补 2048 见方，大图、大块更清楚，一处几秒；
 //   来源 local-vision-models/lama-2048-coreml 的 LaMa2048.mlpackage.zip。
-// 三个的输入都是 image（RGB 图）+ mask（8 位灰度，白 = 要补），输出 output（RGB 图），边长按模型自己的输入约束（Inpainter 读）。
+// 抠图模型（M9，去背景选「精细」时用；用户说系统的效果不好、问 GitHub 上有没有好的）：BiRefNet Lite 1024（MIT），约 82 MB，
+//   什么都能抠（不只人和动物），头发丝、绒毛的边干净，一张约 1 秒（只用 CPU，见 Cutout）；Core ML 版来自 Hugging Face 上
+//   metaclass/birefnet-lite-coreml 固定 revision 的 fp16compute-fp32io/r1 zip（转换脚本在 GitHub 的 miracle2k/birefnet-lite-coreml，MIT）。
+// 三个补图模型的输入都是 image（RGB 图）+ mask（8 位灰度，白 = 要补），输出 output（RGB 图），边长按模型自己的输入约束（Inpainter 读）。
 // zip 包整个按 SHA256 校验（ponytail: 这两个没有固定 revision，用 main，上游换了文件校验就不过、装不上，到时候更新 SHA256），
 // 再用系统 tar 解开（bsdtar 认 zip）。下好用 Core ML 编译，放进「~/Library/Application Support/Kitty Box/Models/<名字>.mlmodelc」，
 // 正式版和开发版共用。Hugging Face 连不上（比如在国内）时自动换镜像 hf-mirror.com 再下一遍（反正逐个校验，镜像给错了也装不上）。
-// App 自己用 URLSession 下载，不带隔离标记。许可证在 Resources/lama-LICENSE.txt、migan-LICENSE.txt。
+// App 自己用 URLSession 下载，不带隔离标记。许可证在 Resources/lama-LICENSE.txt、migan-LICENSE.txt、birefnet-LICENSE.txt。
 // ModelDownloads 是界面上看的那份状态（每个模型：没下 / 下载中 / 好了 / 没成）。
 
 import CoreML
@@ -17,16 +20,23 @@ import CryptoKit
 import Foundation
 import Observation
 
-nonisolated enum InpaintModel: String, CaseIterable, Identifiable, Sendable {
-  case fast, standard, hd
+nonisolated enum AIModel: String, CaseIterable, Identifiable, Sendable {
+  case fast, standard, hd, cutout
 
   var id: Self { self }
+
+  /// 补图的那三个（设置里选一个给画笔擦除、AI 水印用）
+  static let inpainters: [AIModel] = [.fast, .standard, .hd]
+
+  /// 「补图模型」「抠图模型」（下载提示里说要下的是什么）
+  var kind: String { self == .cutout ? "抠图模型" : "补图模型" }
 
   var title: String {
     switch self {
     case .fast: "快速"
     case .standard: "标准"
     case .hd: "高清"
+    case .cutout: "精细"
     }
   }
 
@@ -35,6 +45,7 @@ nonisolated enum InpaintModel: String, CaseIterable, Identifiable, Sendable {
     case .fast: "MI-GAN"
     case .standard: "LaMa"
     case .hd: "Big LaMa 2048"
+    case .cutout: "BiRefNet"
     }
   }
 
@@ -43,6 +54,7 @@ nonisolated enum InpaintModel: String, CaseIterable, Identifiable, Sendable {
     case .fast: "下得快、补得快（一处零点几秒），小水印够用，大块细节一般"
     case .standard: "又快又好（一处约 1 秒），推荐"
     case .hd: "一次补 2048 见方，大图、大块更清楚，一处几秒"
+    case .cutout: "什么都能抠，头发丝、绒毛的边干净，一张约 1 秒"
     }
   }
 
@@ -94,6 +106,11 @@ nonisolated enum InpaintModel: String, CaseIterable, Identifiable, Sendable {
         "local-vision-models/lama-2048-coreml/resolve/main/LaMa2048.mlpackage.zip",
         sha256: "094279456cc4ac4d682ee771bdca0032bd353aaa8e1ba9aa3b3d60b52bbcd353",
         size: 190_000_000)
+    case .cutout:
+      .zip(
+        "metaclass/birefnet-lite-coreml/resolve/519543b900332b0fd834ab7a40a17099b2d2e7cb/fp16compute-fp32io/r1/BiRefNetLite-1024-FP16Compute-FP32IO-iOS17-r1.mlpackage.zip",
+        sha256: "46e7f3306069d1385761c0db86d65913dc3f980bf5348eb0c3db429e3f8414b7",
+        size: 82_250_830)
     }
   }
 
@@ -112,6 +129,7 @@ nonisolated enum InpaintModel: String, CaseIterable, Identifiable, Sendable {
       case .fast: "MIGAN"
       case .standard: "LaMa"
       case .hd: "LaMa2048"
+      case .cutout: "BiRefNet"
       }
     return Self.folder.appending(path: stem + ".mlmodelc")
   }
@@ -246,7 +264,7 @@ nonisolated enum InpaintModel: String, CaseIterable, Identifiable, Sendable {
   }
 }
 
-/// 各个模型的下载状态（设置 › 补图模型、画笔擦除和 AI 水印页顶上那一条）
+/// 各个模型的下载状态（设置 › 模型、画笔擦除、AI 水印、去背景页顶上那一条）
 @Observable final class ModelDownloads {
   enum State: Equatable {
     case missing
@@ -257,12 +275,12 @@ nonisolated enum InpaintModel: String, CaseIterable, Identifiable, Sendable {
 
   static let shared = ModelDownloads()
 
-  private(set) var states: [InpaintModel: State] = Dictionary(
-    uniqueKeysWithValues: InpaintModel.allCases.map { ($0, $0.isInstalled ? .ready : .missing) })
+  private(set) var states: [AIModel: State] = Dictionary(
+    uniqueKeysWithValues: AIModel.allCases.map { ($0, $0.isInstalled ? .ready : .missing) })
 
-  func state(of model: InpaintModel) -> State { states[model] ?? .missing }
+  func state(of model: AIModel) -> State { states[model] ?? .missing }
 
-  func start(_ model: InpaintModel) async {
+  func start(_ model: AIModel) async {
     switch state(of: model) {
     case .downloading, .ready: return
     case .missing, .failed: break
@@ -285,9 +303,15 @@ nonisolated enum InpaintModel: String, CaseIterable, Identifiable, Sendable {
   }
 
   /// 删掉下好的（正在用的也能删，用时再下）
-  func remove(_ model: InpaintModel) {
+  func remove(_ model: AIModel) {
     try? model.remove()
-    Task { await Inpainter.shared.forget(model) }
+    Task {
+      if model == .cutout {
+        await Matting.shared.forget()
+      } else {
+        await Inpainter.shared.forget(model)
+      }
+    }
     states[model] = model.isInstalled ? .ready : .missing
   }
 }

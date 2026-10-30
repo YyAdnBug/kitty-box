@@ -3,7 +3,9 @@
 // 2. 「AI生成」这类文字水印（国内的豆包、即梦、通义、文心、可灵、海螺、Kimi…按规定都在角上标「AI生成」，国外有「Made with AI」等）：
 //    用系统的文字识别（Vision，本机）在上下两条边里找带这些字的那一行，往外扩一圈（左边多扩一点，盖住字旁边的小图标），
 //    一块一块交给补图模型补（Inpainter，设置里选的那个；没下好就说一声）。
-// 两条都没认出：那一行写「没认出 AI 水印」，能改用画笔擦除。结果是「原名-去水印」放在原图旁边，原图不动。
+// 3. 用户自己加的字（M9，用户问「不是 AI 生成的字怎么去除」）：右边「也去掉这些字」填的词（署名、网址、「样张」…），
+//    整张图里找，带这些词的那一行整行补掉（单张图上点哪行擦哪行用画笔擦除的「选文字」）。
+// 都没认出：那一格写「没认出 AI 水印」，能改用画笔擦除。结果是「原名-去水印」放在原图旁边，原图不动。
 // ponytail: 只认文字；纯图标、没有字的水印（比如有的只有一个 logo）认不出，用画笔擦除
 
 import CoreGraphics
@@ -15,7 +17,7 @@ nonisolated enum AIMark {
   enum Failure: LocalizedError {
     case unreadable
     case notFound
-    case needsModel(InpaintModel)
+    case needsModel(AIModel)
     case unwritable
 
     var errorDescription: String? {
@@ -36,11 +38,24 @@ nonisolated enum AIMark {
   ]
 
   static func isWatermark(_ text: String) -> Bool {
-    let folded = text.lowercased().filter { !$0.isWhitespace && $0 != "-" }
+    let folded = fold(text)
     return keywords.contains { folded.contains($0) }
   }
 
-  @concurrent static func clean(_ source: URL, using model: InpaintModel) async throws -> URL {
+  /// 比较前统一：小写、去掉空格和连字符
+  static func fold(_ text: String) -> String {
+    text.lowercased().filter { !$0.isWhitespace && $0 != "-" }
+  }
+
+  /// 「也去掉这些字」填的一串（逗号、顿号、分号、换行隔开；空格不算，「Made with AI」是一个词）→ 一个个词
+  static func words(_ text: String) -> [String] {
+    text.split { ",，、;；\n".contains($0) }.map { fold(String($0)) }.filter { !$0.isEmpty }
+  }
+
+  /// words：用户自己加的词（已经 fold 过），整张图里找
+  @concurrent static func clean(_ source: URL, using model: AIModel, words: [String] = [])
+    async throws -> URL
+  {
     do {
       return try await GeminiMark.clean(source)
     } catch GeminiMark.Failure.notFound {
@@ -49,7 +64,7 @@ nonisolated enum AIMark {
     guard let input = CGImageSourceCreateWithURL(source as CFURL, nil),
       var image = ImageConverter.upright(input, at: 0)
     else { throw Failure.unreadable }
-    let boxes = try locate(in: image)
+    let boxes = try locate(in: image, words: words)
     guard !boxes.isEmpty else { throw Failure.notFound }
     guard model.isInstalled else { throw Failure.needsModel(model) }
     // 一块一块补：几块分在不同角上时一起补，裁出来的就是整张图，缩到模型边长会糊
@@ -62,26 +77,39 @@ nonisolated enum AIMark {
     return target
   }
 
-  /// 图里像 AI 水印的文字在哪：左上为原点的像素框，已经往外扩过一圈；只看上下各 30% 的边（水印都贴边）
-  static func locate(in image: CGImage) throws -> [CGRect] {
+  /// 图里要去掉的字在哪：左上为原点的像素框，已经往外扩过一圈。AI 水印的词只看上下各 30% 的边（水印都贴边），
+  /// 用户加的词整张图都算
+  static func locate(in image: CGImage, words: [String] = []) throws -> [CGRect] {
+    let height = CGFloat(image.height)
+    let bounds = CGRect(x: 0, y: 0, width: CGFloat(image.width), height: height)
+    return try lines(in: image).compactMap { line in
+      let edge = line.rect.minY < height * 0.3 || line.rect.maxY > height * 0.7
+      let folded = fold(line.text)
+      guard (edge && isWatermark(line.text)) || words.contains(where: folded.contains) else {
+        return nil
+      }
+      return expanded(line.rect).intersection(bounds).integral
+    }
+  }
+
+  /// 系统文字识别（本机）认出来的每一行字和它的框（左上为原点的像素框，没扩过）；画笔擦除的「选文字」也用
+  static func lines(in image: CGImage) throws -> [(text: String, rect: CGRect)] {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     request.recognitionLanguages = ["zh-Hans", "en-US"]
     request.usesLanguageCorrection = false
     try VNImageRequestHandler(cgImage: image).perform([request])
     let (width, height) = (CGFloat(image.width), CGFloat(image.height))
-    let bounds = CGRect(x: 0, y: 0, width: width, height: height)
     return (request.results ?? []).compactMap { observation in
-      guard let text = observation.topCandidates(1).first?.string, isWatermark(text) else {
-        return nil
-      }
-      let box = observation.boundingBox
-      guard box.minY < 0.3 || box.maxY > 0.7 else { return nil }
+      guard let text = observation.topCandidates(1).first?.string else { return nil }
       // Vision 的框：0–1、左下为原点 → 像素、左上为原点
-      let rect = CGRect(
-        x: box.minX * width, y: (1 - box.maxY) * height, width: box.width * width,
-        height: box.height * height)
-      return expanded(rect).intersection(bounds).integral
+      let box = observation.boundingBox
+      return (
+        text,
+        CGRect(
+          x: box.minX * width, y: (1 - box.maxY) * height, width: box.width * width,
+          height: box.height * height)
+      )
     }
   }
 

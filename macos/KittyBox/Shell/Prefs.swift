@@ -19,15 +19,18 @@ enum Prefs {
   /// 视频转换：转成什么、缩到多大
   static let videoTarget = "videoTarget"
   static let videoSize = "videoSize"
-  /// 补图用哪个模型（InpaintModel.rawValue）：画笔擦除、AI 水印
+  /// 补图用哪个模型（AIModel.rawValue）：画笔擦除、AI 水印
   static let inpaintModel = "inpaintModel"
   /// 设置 › 通用：自动检查更新、做完时程序坞图标跳一下、外观（跟随系统 / 浅色 / 深色）
   static let autoCheckUpdates = "autoCheckUpdates"
   static let bounceWhenDone = "bounceWhenDone"
   static let appearance = "appearance"
-  /// AI 水印、去背景
+  /// 去背景：背景、裁不裁、用哪种抠法（Cutout.Engine）
   static let cutoutBackground = "cutoutBackground"
   static let cutoutCrop = "cutoutCrop"
+  static let cutoutEngine = "cutoutEngine"
+  /// AI 水印：也去掉这些字（用户自己加的，逗号隔开）
+  static let aiMarkWords = "aiMarkWords"
   /// 打包：压缩级别（Archiver.Level）
   static let packLevel = "packLevel"
   /// 解压：解完把压缩包移到废纸篓

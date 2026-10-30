@@ -69,9 +69,9 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     case .unpack: "zip、7z、RAR 等都行，解到旁边，中文名不乱码"
     case .convert: "HEIC、WebP、RAW 等互转，拍摄信息带过去，结果放在原图旁边"
     case .videoConvert: "转成 MP4、HEVC、GIF，或只取声音；能压到 1080p、720p"
-    case .cutout: "自动抠出人、动物、商品，背景换成透明或白色"
-    case .aiMark: "去掉 AI 生成图上的水印：Gemini 星标按原理还原，「AI生成」字样自动补掉"
-    case .erase: "涂住水印、路人或杂物，松手就自动补上周围的样子"
+    case .cutout: "自动抠出主体，背景换成透明或白色；头发丝、绒毛也抠得干净"
+    case .aiMark: "一批图自动去掉 AI 水印和你指定的字：Gemini 星标按原理还原，字样用模型补掉"
+    case .erase: "涂住水印、路人或杂物，或点选图上的字，松手就自动补上周围的样子"
     case .video: "在第一帧上框住固定的台标，导出时逐帧补上"
     }
   }

@@ -1,4 +1,4 @@
-// 补图（D2、D3，画笔擦除和 AI 水印共用）：用设置里选的模型（InpaintModel：快速 MI-GAN 512 / 标准 LaMa 800 / 高清 Big LaMa 2048，
+// 补图（D2、D3，画笔擦除和 AI 水印共用）：用设置里选的模型（AIModel：快速 MI-GAN 512 / 标准 LaMa 800 / 高清 Big LaMa 2048，
 // 不随包，用时下载到 Application Support）。输入模型边长见方的图和 8 位灰度遮罩（白 = 要补），出同样大的图；遮罩外的像素它原样带过。
 // 大图不缩整张：在遮罩外接框四周留一圈上下文裁一块（尽量正方形），缩到模型的边长推理，再放大回那块的尺寸，只按遮罩把补好的贴回原图，
 // 原图分辨率不变。贴回用的遮罩边缘羽化一下（按缩放比例模糊几个像素）：大块区域缩过再放大，补出来的颜色会差一两个色阶，
@@ -29,10 +29,10 @@ actor Inpainter {
     }
   }
 
-  private var loaded: [InpaintModel: MLModel] = [:]
+  private var loaded: [AIModel: MLModel] = [:]
 
   /// 把 image 里 mask 白的地方补掉；mask 和 image 一样大、8 位灰度。没涂的话原样返回
-  func erase(_ image: CGImage, mask: CGImage, using choice: InpaintModel = .standard) throws
+  func erase(_ image: CGImage, mask: CGImage, using choice: AIModel = .standard) throws
     -> CGImage
   {
     guard let box = Self.bounds(of: mask) else { return image }
@@ -80,7 +80,7 @@ actor Inpainter {
     return output
   }
 
-  private func load(_ choice: InpaintModel) throws -> MLModel {
+  private func load(_ choice: AIModel) throws -> MLModel {
     if let model = loaded[choice] { return model }
     guard choice.isInstalled else { throw Failure.noModel }
     let configuration = MLModelConfiguration()
@@ -91,7 +91,7 @@ actor Inpainter {
   }
 
   /// 设置里删了这个模型：丢掉加载好的那份
-  func forget(_ choice: InpaintModel) { loaded[choice] = nil }
+  func forget(_ choice: AIModel) { loaded[choice] = nil }
 
   // MARK: 纯函数
 

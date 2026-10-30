@@ -1,0 +1,98 @@
+== NOTICE
+BiRefNet Lite 1024 for Core ML
+Copyright 2026 miracle2k contributors
+
+This distribution contains a Core ML conversion of the official
+ZhengPeng7/BiRefNet_lite model by Peng Zheng et al., pinned to revision
+7838f1c3472f827cd8ce13ab5ccc2ce48077360f.
+
+Upstream model: https://huggingface.co/ZhengPeng7/BiRefNet_lite
+Upstream project: https://github.com/ZhengPeng7/BiRefNet
+
+The BiRefNet project and model are presented by their authors under the MIT
+License. The Hugging Face model card displays an MIT badge, although that model
+repository does not contain a separate license file. The upstream MIT notice is
+reproduced in LICENSE-BIREFNET.
+
+The conversion is adapted from imperatormk/coreml-birefnet, including its
+fixed-shape loader, deformable-convolution lowering, and rank-5 Swin rewrite:
+https://github.com/imperatormk/coreml-birefnet
+
+The prior-art MIT notice is reproduced in LICENSE-COREML-BIREFNET.
+
+Local modifications pin and verify the upstream source and weights, expose only
+the final mask logits, target iOS 17, provide separately validated FP32 and
+FP16-compute/FP32-I/O builds, add deterministic verification and packaging,
+and document the tested CPU-only runtime policy.
+
+This project is not affiliated with or endorsed by the BiRefNet authors,
+Hugging Face, Apple, or the prior-art project.
+
+== LICENSE (Core ML conversion)
+MIT License
+
+Copyright (c) 2026 miracle2k contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+== LICENSE-BIREFNET
+MIT License
+
+Copyright (c) 2024 ZhengPeng
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+== LICENSE-COREML-BIREFNET
+MIT License
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

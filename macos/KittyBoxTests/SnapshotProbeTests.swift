@@ -86,7 +86,8 @@ struct SnapshotProbeTests {
         source: samples.appending(path: "Gemini_Generated_Image_1.png"),
         state: .done(samples.appending(path: "Gemini_Generated_Image_1-去水印.png"))),
       .init(
-        source: samples.appending(path: "截图 2026-10-30.png"), state: .failed("没认出 Gemini 角标。")),
+        source: samples.appending(path: "截图 2026-10-30.png"), state: .failed("没认出 AI 水印。")),
+      .init(source: samples.appending(path: "IMG_0002.png")),
     ]
 
     // 画笔擦除：系统自带的壁纸，涂一笔（还没擦）
@@ -96,9 +97,9 @@ struct SnapshotProbeTests {
     try await makeTestVideo(at: movie)
     navigator.video.load(movie)
     navigator.videoConvert.add([movie])
+    // 只有一张：直接是大图（名字在顶上）；AI 水印那三张是网格
     navigator.cutout.items = [
-      .init(source: samples.appending(path: "IMG_0001.png")),
-      .init(source: samples.appending(path: "截图 2026-10-30.png"), state: .failed("没认出主体。")),
+      .init(source: samples.appending(path: "IMG_0001.png"), state: .done(converted))
     ]
     try await Task.sleep(for: .seconds(2))
     let image = try #require(navigator.erase.image)
@@ -114,7 +115,7 @@ struct SnapshotProbeTests {
     }
 
     // 真的擦一处（同一条路：裁、缩、补、贴回），存成 PNG 看接缝；再截一张前后对比
-    guard InpaintModel.standard.isInstalled else { return }
+    guard AIModel.standard.isInstalled else { return }
     navigator.tool = .erase
     await navigator.erase.erase()
     let erased = try #require(navigator.erase.image)

@@ -80,7 +80,7 @@ struct AboutView: View {
           // verbatim：别把名字里的符号当 Markdown
           Text(
             verbatim:
-              "随包的第三方组件：7-Zip（LGPL 2.1）、Gemini 去水印的 α 图（MIT）；补图模型用到时才下载：LaMa、Big LaMa 2048（Apache-2.0）、MI-GAN（MIT）。去背景和找文字水印用系统自带的 Vision。许可证全文在 App 包的 Resources 里。"
+              "随包的第三方组件：7-Zip（LGPL 2.1）、Gemini 去水印的 α 图（MIT）；模型用到时才下载：补图的 LaMa、Big LaMa 2048（Apache-2.0）、MI-GAN（MIT），抠图的 BiRefNet（MIT）。去背景的「系统」抠法和找文字用系统自带的 Vision。许可证全文在 App 包的 Resources 里。"
           )
           .font(.caption).foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)

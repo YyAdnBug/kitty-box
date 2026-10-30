@@ -1,5 +1,5 @@
 // 做完 / 没做成 / 正在做的那一行字：绿勾 +「存成「x」」+ 在访达中显示；红叹号 + 原因；进度条 + 百分比 +「停止」。
-// 打包、解压、转换、去水印共用，只染图标、字用次要色。
+// 打包、解压、转换、去水印共用，只染图标、字用次要色。做完时 App 在后台，程序坞图标跳一下（bounceIfInBackground）。
 
 import AppKit
 import SwiftUI
@@ -52,5 +52,12 @@ struct RunningProgress: View {
       }
       Button("停止", action: stop).buttonStyle(.link)
     }
+  }
+}
+
+extension NSApplication {
+  /// 一件事做完时 App 在后台：程序坞图标跳一下（只跳一次，不一直喊）
+  func bounceIfInBackground() {
+    if !isActive { requestUserAttention(.informationalRequest) }
   }
 }

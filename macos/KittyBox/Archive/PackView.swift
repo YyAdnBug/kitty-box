@@ -44,6 +44,7 @@ import UniformTypeIdentifiers
     task = Task {
       do {
         result = .success(try await Archiver.pack(plan, options: options) { self.progress = $0 })
+        NSApp.bounceIfInBackground()
       } catch is CancellationError {
         result = nil
       } catch {
@@ -63,6 +64,7 @@ struct PackView: View {
   @Bindable var model: PackModel
   @AppStorage(Prefs.packFormat) private var format = Archiver.Format.zip
   @AppStorage(Prefs.packWindowsCompatible) private var windowsCompatible = false
+  @AppStorage(Prefs.packLevel) private var level = Archiver.Level.normal
   @State private var selection = Set<URL>()
   @State private var newRule = ""
   @State private var ruleProblem: String?
@@ -70,7 +72,8 @@ struct PackView: View {
   @State private var showsProblems = false
 
   private var options: Archiver.PackOptions {
-    .init(format: format, password: model.password, windowsCompatible: windowsCompatible)
+    .init(
+      format: format, password: model.password, windowsCompatible: windowsCompatible, level: level)
   }
 
   var body: some View {
@@ -206,6 +209,13 @@ struct PackView: View {
       .pickerStyle(.segmented)
       .labelsHidden()
     }
+    OptionGroup(title: "压缩", footnote: Text(levelHint)) {
+      Picker("压缩", selection: $level) {
+        ForEach(Archiver.Level.allCases, id: \.self) { Text($0.title).tag($0) }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+    }
     OptionGroup(
       title: "密码",
       footnote: Archiver.passwordProblem(options).map { Text($0).foregroundStyle(.red) }
@@ -241,6 +251,15 @@ struct PackView: View {
           .onSubmit(addRule)
         Button("添加", action: addRule).disabled(newRule.isEmpty)
       }
+    }
+  }
+
+  private var levelHint: String {
+    switch level {
+    case .store: "不压缩，只是装在一起：最快，照片、视频这类本来就压过的用它正好。"
+    case .fast: "压得少一点、快很多。"
+    case .normal: "又快又小，一般用它。"
+    case .smallest: "压到最小，大文件夹会慢不少。"
     }
   }
 

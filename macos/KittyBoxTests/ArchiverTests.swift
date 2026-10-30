@@ -137,6 +137,27 @@ struct ArchiverTests {
     #expect(!box.exists("大.7z"))
   }
 
+  /// 压缩级别：同一堆重复的字，「存储」原样装、「最小」压得很小
+  @Test func compressionLevels() async throws {
+    let box = try Sandbox()
+    let text = String(repeating: "喵呜 Kitty Box 打包测试。", count: 40_000)
+    let plan = await Archiver.plan([try box.file("长文.txt", text)], rules: rules)
+    let stored = try await Archiver.pack(plan, options: .init(format: .zip, level: .store))
+    let smallest = try await Archiver.pack(plan, options: .init(format: .zip, level: .smallest))
+    func size(_ url: URL) throws -> Int {
+      try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+    }
+    #expect(try size(stored) > text.utf8.count)
+    #expect(try size(smallest) < text.utf8.count / 20)
+  }
+
+  @Test func multiVolumeNames() {
+    #expect(Archiver.isMultiVolume(URL(filePath: "/tmp/资源.7z.001")))
+    #expect(Archiver.isMultiVolume(URL(filePath: "/tmp/资源.part1.rar")))
+    #expect(!Archiver.isMultiVolume(URL(filePath: "/tmp/资源.rar")))
+    #expect(!Archiver.isMultiVolume(URL(filePath: "/tmp/资源.zip")))
+  }
+
   @Test func percentFromSevenZipProgress() {
     #expect(
       Archiver.lastPercent(in: "  0M Scan\u{8}\u{8}  0%\u{8}\u{8} 32% 6 + big/f6.bin\u{8} 65% 6")

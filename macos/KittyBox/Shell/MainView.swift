@@ -62,7 +62,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
   var summary: String {
     switch self {
     case .pack: "打成 zip 或 7z，可设密码；系统杂文件自动去掉，包放在原文件旁边"
-    case .unpack: "zip、7z、RAR、tar 等都行，解到旁边；Windows 打的中文名不乱码"
+    case .unpack: "zip、7z、RAR 等都行，解到旁边，中文名不乱码"
     case .convert: "HEIC、WebP、RAW 等互转，拍摄信息带过去，结果放在原图旁边"
     case .gemini: "按原理还原 Gemini 生成图右下角的星标，画质不受损"
     case .erase: "涂住水印、路人或杂物，松手就自动补上周围的样子"

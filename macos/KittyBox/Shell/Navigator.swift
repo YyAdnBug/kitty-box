@@ -77,6 +77,13 @@ import SwiftUI
     urls.contains(where: tool.accepts)
   }
 
+  /// 访达「服务」菜单指明了交给哪个工具（Services）：交给它、打开主窗口
+  func take(_ tool: Tool, _ urls: [URL]) {
+    open(tool, with: urls)
+    openWindow?(id: KittyBoxApp.windowID)
+    NSApp.activate()
+  }
+
   /// 文件拖到程序坞图标、或在访达里「打开方式」选了本 App
   func receive(_ urls: [URL]) {
     route(urls)

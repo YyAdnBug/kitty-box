@@ -105,8 +105,15 @@ import UniformTypeIdentifiers
         }
         current = nil
         update(job.id) { $0.state = state }
+        // 解完把压缩包移到废纸篓（偏好里开着时；能从废纸篓放回去，分卷包不挪）
+        if case .done = state, UserDefaults.standard.bool(forKey: Prefs.unpackTrashArchive),
+          !Archiver.isMultiVolume(job.archive)
+        {
+          try? FileManager.default.trashItem(at: job.archive, resultingItemURL: nil)
+        }
       }
       worker = nil
+      NSApp.bounceIfInBackground()
     }
   }
 
@@ -117,6 +124,7 @@ import UniformTypeIdentifiers
 
 struct UnpackView: View {
   @Bindable var model: UnpackModel
+  @AppStorage(Prefs.unpackTrashArchive) private var trashArchive = false
   @State private var selection = Set<UnpackModel.Job.ID>()
   /// 正在弹框问密码的那一个
   @State private var asking: UnpackModel.Job.ID?
@@ -125,6 +133,9 @@ struct UnpackView: View {
     ToolPage(tool: .unpack) {
       Button("添加文件…", systemImage: "plus") { Navigator.shared.importing = true }
         .help("添加压缩包（⌘O）")
+      Toggle("解完移到废纸篓", isOn: $trashArchive)
+        .toggleStyle(.checkbox)
+        .help("解好之后把压缩包挪到废纸篓（能放回去；分卷包不挪）")
       Button("清掉做完的", systemImage: "checklist.checked") { model.clearFinished() }
         .help("清掉解完的和没解成的")
         .disabled(!model.jobs.contains(where: \.isFinished))
@@ -160,7 +171,7 @@ struct UnpackView: View {
   }
 
   private var table: some View {
-    Table(model.jobs, selection: $selection) {
+    Table(of: UnpackModel.Job.self, selection: $selection) {
       TableColumn("压缩包") { job in
         HStack(spacing: 8) {
           FileThumb(url: job.archive, size: 18)
@@ -174,6 +185,11 @@ struct UnpackView: View {
         JobStatus(job: job, askPassword: { asking = job.id }, stop: { model.stop(job.id) })
       }
       .width(min: 240, ideal: 420)
+    } rows: {
+      // 解好的能直接拖到访达或别的 App（拖的是解出来的东西）
+      ForEach(model.jobs) { job in
+        TableRow(job).itemProvider { job.result.flatMap(NSItemProvider.init(contentsOf:)) }
+      }
     }
     .contextMenu(forSelectionType: UnpackModel.Job.ID.self) { ids in
       Button("在访达中显示") {

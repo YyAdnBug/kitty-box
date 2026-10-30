@@ -67,26 +67,42 @@ import SwiftUI
     }
   }
 
-  /// 把还没做好的一张一张交给 work（它把结果存在旁边、返回结果的位置）。
-  /// ponytail: 一张一张做；几百张时嫌慢再改成按核数并发
-  func run(_ work: (URL) async throws -> URL) async {
+  /// 把还没做好的交给 work（它把结果存在旁边、返回结果的位置），同时做几张：按核数，最多 4 张（RAW、大图解码吃内存）
+  func run(_ work: @escaping @Sendable (URL) async throws -> URL) async {
     guard !running else { return }
     running = true
     defer { running = false }
-    for item in items {
-      switch item.state {
-      case .waiting, .failed: break
-      default: continue
+    var queue = items.filter {
+      switch $0.state {
+      case .waiting, .failed: true
+      default: false
       }
-      update(item.id) { $0.state = .running }
-      let state: Item.State
-      do {
-        state = .done(try await work(item.source))
-      } catch {
-        state = .failed(error.localizedDescription)
+    }.map { ($0.id, $0.source) }[...]
+    let lanes = min(ProcessInfo.processInfo.activeProcessorCount, 4)
+    await withTaskGroup(of: (Item.ID, Result<URL, any Error>).self) { group in
+      var inFlight = 0
+      while true {
+        // 补满：最多 lanes 张一起做
+        while inFlight < lanes, let (id, source) = queue.popFirst() {
+          update(id) { $0.state = .running }
+          group.addTask {
+            do { return (id, .success(try await work(source))) } catch {
+              return (id, .failure(error))
+            }
+          }
+          inFlight += 1
+        }
+        guard let (id, result) = await group.next() else { break }
+        inFlight -= 1
+        update(id) {
+          switch result {
+          case .success(let url): $0.state = .done(url)
+          case .failure(let error): $0.state = .failed(error.localizedDescription)
+          }
+        }
       }
-      update(item.id) { $0.state = state }
     }
+    NSApp.bounceIfInBackground()
   }
 
   private func update(_ id: Item.ID, _ change: (inout Item) -> Void) {

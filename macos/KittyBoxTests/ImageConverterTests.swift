@@ -1,5 +1,5 @@
 // ImageConverter：10 种格式各转一遍（类型、尺寸对、JPEG 透明处是白的、图标是正方形）；照片的拍摄信息带过去、
-// 旋转方向转正；动图转 GIF 留着每一帧；能读什么；结果的名字。
+// 旋转方向转正；动图转 GIF 留着每一帧；能读什么；结果的名字；缩到长边上限（只缩不放）、去掉定位只去 GPS。
 
 import CoreGraphics
 import Foundation
@@ -103,6 +103,39 @@ struct ImageConverterTests {
         #expect(exif?[kCGImagePropertyExifDateTimeOriginal] as? String == "2026:10:30 12:00:00")
       }
     }
+  }
+
+  @Test func resizesAndStripsLocation() async throws {
+    let box = try Sandbox()
+    let source = box.root.appending(path: "旅行.jpg")
+    write(
+      [picture(3000, 2000)], to: source, type: "public.jpeg",
+      properties: [
+        kCGImagePropertyGPSDictionary: [
+          kCGImagePropertyGPSLatitude: 35.68, kCGImagePropertyGPSLatitudeRef: "N",
+        ],
+        kCGImagePropertyExifDictionary: [
+          kCGImagePropertyExifDateTimeOriginal: "2026:10:30 12:00:00"
+        ],
+      ])
+
+    let output = try await ImageConverter.convert(
+      source, to: .jpeg, quality: 0.8, maxSide: 800, stripLocation: true)
+    let result = try #require(CGImageSourceCreateWithURL(output as CFURL, nil))
+    let image = try #require(CGImageSourceCreateImageAtIndex(result, 0, nil))
+    #expect(image.width == 800 && image.height == 533)
+    let properties = CGImageSourceCopyPropertiesAtIndex(result, 0, nil) as? [CFString: Any]
+    #expect(properties?[kCGImagePropertyGPSDictionary] == nil)
+    let exif = properties?[kCGImagePropertyExifDictionary] as? [CFString: Any]
+    #expect(exif?[kCGImagePropertyExifDateTimeOriginal] as? String == "2026:10:30 12:00:00")
+
+    // 小图不放大；不去定位时 GPS 带过去
+    let kept = try await ImageConverter.convert(source, to: .heic, quality: 0.8, maxSide: 8000)
+    let keptSource = try #require(CGImageSourceCreateWithURL(kept as CFURL, nil))
+    let keptImage = try #require(CGImageSourceCreateImageAtIndex(keptSource, 0, nil))
+    #expect(keptImage.width == 3000)
+    let keptProperties = CGImageSourceCopyPropertiesAtIndex(keptSource, 0, nil) as? [CFString: Any]
+    #expect(keptProperties?[kCGImagePropertyGPSDictionary] != nil)
   }
 
   @Test func animatedGIFKeepsFrames() async throws {

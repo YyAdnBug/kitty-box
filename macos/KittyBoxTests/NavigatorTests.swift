@@ -1,8 +1,8 @@
 // Navigator：收进来的文件往哪送——当前工具全收得了就给它，有图片或视频就问交给谁，别的交给打包；拖进工具页 / 粘贴先给当前工具；
-// 哪些工具能收这批文件；上次选的工具记在偏好里（用临时偏好域，不写用户的）。
+// 哪些工具能收这批文件；上次选的工具记在偏好里（用临时偏好域，不写用户的）；访达「服务」菜单交给指明的工具。
 // （全是压缩包直接解压那一支会真的开始解，留给 ArchiverTests 和手测。）
 
-import Foundation
+import AppKit
 import Testing
 
 @testable import KittyBox
@@ -92,5 +92,20 @@ final class NavigatorTests {
     #expect(first.tool == .pack)
     first.tool = .video
     #expect(Navigator(defaults: defaults).tool == .video)
+  }
+
+  @Test func servicesHandToTheNamedTool() {
+    let navigator = make(on: .video)
+    let services = Services(navigator: navigator)
+    let pasteboard = NSPasteboard(name: .init("kittybox-test-\(UUID())"))
+    defer { pasteboard.releaseGlobally() }
+    pasteboard.clearContents()
+    pasteboard.writeObjects([photo as NSURL])
+    var message: NSString?
+    withUnsafeMutablePointer(to: &message) {
+      services.convert(pasteboard, userData: nil, error: AutoreleasingUnsafeMutablePointer($0))
+    }
+    #expect(navigator.tool == .convert)
+    #expect(navigator.convert.items.map(\.source) == [photo])
   }
 }

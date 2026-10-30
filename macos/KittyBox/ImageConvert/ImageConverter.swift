@@ -75,9 +75,11 @@ nonisolated enum ImageConverter {
     source.deletingPathExtension().appendingPathExtension(format.fileExtension).uniqued()
   }
 
-  @concurrent static func convert(_ source: URL, to format: Format, quality: Double) async throws
-    -> URL
-  {
+  /// maxSide：长边超过它就等比缩到它（只缩不放；图标格式不管它）；stripLocation：去掉 GPS 定位，别的照片信息照样带
+  @concurrent static func convert(
+    _ source: URL, to format: Format, quality: Double, maxSide: Int? = nil,
+    stripLocation: Bool = false
+  ) async throws -> URL {
     guard let input = CGImageSourceCreateWithURL(source as CFURL, nil),
       CGImageSourceGetCount(input) > 0
     else { throw Failure.unreadable }
@@ -97,10 +99,19 @@ nonisolated enum ImageConverter {
         CGImageDestinationSetProperties(destination, properties)
       }
       for index in 0..<frames {
-        guard let image = upright(input, at: index) else { throw Failure.unreadable }
+        guard let image = upright(input, at: index, maxSide: maxSide) else {
+          throw Failure.unreadable
+        }
         var properties =
           CGImageSourceCopyPropertiesAtIndex(input, index, nil) as? [CFString: Any] ?? [:]
         properties[kCGImagePropertyOrientation] = 1
+        if stripLocation { properties[kCGImagePropertyGPSDictionary] = nil }
+        // 缩过的话 EXIF 里记的像素尺寸跟着改
+        if var exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+          exif[kCGImagePropertyExifPixelXDimension] = image.width
+          exif[kCGImagePropertyExifPixelYDimension] = image.height
+          properties[kCGImagePropertyExifDictionary] = exif
+        }
         if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
           tiff[kCGImagePropertyTIFFOrientation] = 1
           properties[kCGImagePropertyTIFFDictionary] = tiff
@@ -116,15 +127,15 @@ nonisolated enum ImageConverter {
     return target
   }
 
-  /// 按「旋转方向」转正的整张图（RAW 也在这里显影）；画笔擦除也用它读图
-  static func upright(_ source: CGImageSource, at index: Int) -> CGImage? {
+  /// 按「旋转方向」转正的整张图（RAW 也在这里显影）；画笔擦除也用它读图。maxSide：长边最多这么长（只缩不放）
+  static func upright(_ source: CGImageSource, at index: Int, maxSide: Int? = nil) -> CGImage? {
     let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
     let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
     let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
     let options: [CFString: Any] = [
       kCGImageSourceCreateThumbnailFromImageAlways: true,
       kCGImageSourceCreateThumbnailWithTransform: true,
-      kCGImageSourceThumbnailMaxPixelSize: max(width, height, 1),
+      kCGImageSourceThumbnailMaxPixelSize: min(max(width, height, 1), maxSide ?? .max),
       kCGImageSourceShouldCacheImmediately: true,
     ]
     return CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary)

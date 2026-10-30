@@ -58,6 +58,7 @@ struct GeminiView: View {
           remove: { batch.remove(item.id) },
           onFailure: ("改用画笔擦除", handOff)
         )
+        .onDrag { NSItemProvider(contentsOf: item.result ?? item.source) ?? NSItemProvider() }
         .contextMenu {
           if let url = item.result {
             Button("打开去好的") { NSWorkspace.shared.open(url) }

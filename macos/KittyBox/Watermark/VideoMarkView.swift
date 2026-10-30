@@ -64,6 +64,7 @@ import SwiftUI
       resultFrame = try? await VideoDelogo.firstFrame(of: url)
       comparing = resultFrame != nil
       state = .done(url)
+      NSApp.bounceIfInBackground()
     } catch {
       state = .failed(error.localizedDescription)
     }

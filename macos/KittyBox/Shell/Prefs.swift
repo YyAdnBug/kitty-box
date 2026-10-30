@@ -13,4 +13,11 @@ enum Prefs {
   /// 图片转换：上次选的格式和质量
   static let convertFormat = "convertFormat"
   static let convertQuality = "convertQuality"
+  /// 图片转换：长边上限（0 = 原尺寸）、去不去定位
+  static let convertMaxSide = "convertMaxSide"
+  static let convertStripLocation = "convertStripLocation"
+  /// 打包：压缩级别（Archiver.Level）
+  static let packLevel = "packLevel"
+  /// 解压：解完把压缩包移到废纸篓
+  static let unpackTrashArchive = "unpackTrashArchive"
 }

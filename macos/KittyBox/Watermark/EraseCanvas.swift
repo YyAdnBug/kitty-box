@@ -1,5 +1,5 @@
 // 画笔擦除（D2、D3）：拖进一张图，涂住要擦掉的地方，松手就交给 Inpainter 补（照系统照片的「清理」：一笔一擦，不用再点按钮）；
-// ⌘Z 一次退回一笔；满意了点页头「存储」，另存成「原名-去水印」，原图不动。
+// ⌘Z 一次退回一笔、⇧⌘Z 重做；满意了点页头「存储」，另存成「原名-去水印」，原图不动。
 // 画布能放大（捏合、⌘= / ⌘-，⌘0 回到适合窗口），放大后用触控板 / 滚轮挪；底下浮着一条控制栏：笔刷大小（[ ] 也能调）、撤销、
 // 对比（最早的原图和现在的，拖中间的线看）、缩放。涂的笔画存原图的像素坐标；笔刷大小按屏幕上看着的粗细，落笔时换算成原图像素。
 // 补图模型第一次用要先下载（LaMaModel，约 216 MB）：没下时页面顶上一条「下载」，下好之前不能涂。
@@ -29,6 +29,8 @@ import UniformTypeIdentifiers
   private(set) var image: CGImage?
   /// 每次擦除前的图，撤销用
   private(set) var history: [CGImage] = []
+  /// 撤销掉的擦除，重做用（再擦一笔就清空）
+  private(set) var undone: [CGImage] = []
   var strokes: [Stroke] = []
   private(set) var state = State.idle
   /// 画布上是不是在前后对比（关掉才能接着涂）
@@ -45,6 +47,7 @@ import UniformTypeIdentifiers
     source = url
     image = nil
     history = []
+    undone = []
     strokes = []
     comparing = false
     state = .loading
@@ -63,6 +66,7 @@ import UniformTypeIdentifiers
       let mask = Self.mask(strokes, width: image.width, height: image.height)
       let result = try await Inpainter.shared.erase(image, mask: mask)
       history.append(image)
+      undone = []
       self.image = result
       strokes = []
       state = .idle
@@ -75,10 +79,18 @@ import UniformTypeIdentifiers
   func undo() {
     if !strokes.isEmpty {
       strokes.removeLast()
-    } else if let previous = history.popLast() {
+    } else if let previous = history.popLast(), let current = image {
+      undone.append(current)
       image = previous
       if history.isEmpty { comparing = false }
     }
+  }
+
+  /// 重做撤销掉的那一次擦除
+  func redo() {
+    guard let next = undone.popLast(), let current = image else { return }
+    history.append(current)
+    image = next
   }
 
   func save() {
@@ -270,6 +282,10 @@ struct EraseCanvas: View {
         .keyboardShortcut("z")
         .help("撤销（⌘Z）")
         .disabled(model.busy || (model.strokes.isEmpty && model.history.isEmpty))
+      Button("重做", systemImage: "arrow.uturn.forward") { model.redo() }
+        .keyboardShortcut("z", modifiers: [.command, .shift])
+        .help("重做（⇧⌘Z）")
+        .disabled(model.busy || model.undone.isEmpty)
       Toggle("对比原图", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
         .toggleStyle(.button)
         .help("拖中间的线对比原图")

@@ -11,12 +11,36 @@ enum Archiver {
     case sevenZip = "7z"
   }
 
+  /// 压缩级别（M5）：7zz 的 -mx0 / 1 / 5 / 9
+  nonisolated enum Level: String, CaseIterable {
+    case store, fast, normal, smallest
+
+    var title: String {
+      switch self {
+      case .store: "存储"
+      case .fast: "快"
+      case .normal: "标准"
+      case .smallest: "最小"
+      }
+    }
+
+    var flag: String {
+      switch self {
+      case .store: "-mx0"
+      case .fast: "-mx1"
+      case .normal: "-mx5"
+      case .smallest: "-mx9"
+      }
+    }
+  }
+
   nonisolated struct PackOptions {
     var format = Format.zip
     /// 空 = 不设密码
     var password = ""
     /// zip 设了密码时用 ZipCrypto，Windows 自带解压也能开，但容易被破解（B10）；默认 AES-256
     var windowsCompatible = false
+    var level = Level.normal
   }
 
   nonisolated struct PackPlan: Sendable {
@@ -109,7 +133,7 @@ enum Archiver {
     defer { try? FileManager.default.removeItem(at: list) }
     var arguments = [
       "a", "-t\(options.format == .zip ? "zip" : "7z")", "-snl", "-scsUTF-8", "-bso0", "-bsp1",
-      archive.path, "@" + list.path,
+      options.level.flag, archive.path, "@" + list.path,
     ]
     if !options.password.isEmpty {
       arguments.append("-p" + options.password)
@@ -237,6 +261,14 @@ enum Archiver {
   nonisolated static func isArchive(_ url: URL) -> Bool {
     let ext = url.pathExtension.lowercased()
     return archiveExtensions.contains(ext) || (ext.count == 3 && ext.allSatisfy(\.isNumber))
+  }
+
+  /// 分卷包（.001、.part1.rar）：解完不挪到废纸篓（别的卷还在，只挪一个反而乱）
+  nonisolated static func isMultiVolume(_ url: URL) -> Bool {
+    let name = url.lastPathComponent.lowercased()
+    let ext = url.pathExtension
+    return (ext.count == 3 && ext.allSatisfy(\.isNumber))
+      || name.range(of: #"\.part\d+\.rar$"#, options: .regularExpression) != nil
   }
 
   /// zip（看文件头）和 tar 一族交给系统 tar：7zz 解 .tar.gz 只解出一层 .tar，解 GBK 名字的 zip 会坏

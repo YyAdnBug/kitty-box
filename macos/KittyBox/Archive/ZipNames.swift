@@ -15,6 +15,18 @@ nonisolated enum ZipNames {
     var utf8Flag: Bool
     /// 标志位第 0 位：这一条加了密（ZipCrypto 或 AES）
     var encrypted = false
+    /// 解开后多大；ZIP64 的大条目（记成 0xFFFFFFFF）不另读，是 nil
+    var size: UInt64?
+  }
+
+  /// 条目的名字按什么编码读成字：标了 UTF-8 的按 UTF-8，其余按整包判断出的编码（「看看里面」用）
+  static func name(of entry: Entry, charset: Charset) -> String {
+    let gb18030 = String.Encoding(
+      rawValue: CFStringConvertEncodingToNSStringEncoding(
+        CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
+    let encoding: String.Encoding = entry.utf8Flag || charset == .utf8 ? .utf8 : gb18030
+    return String(data: entry.name, encoding: encoding)
+      ?? String(decoding: entry.name, as: UTF8.self)
   }
 
   /// 是不是 zip：开头是本地文件头 PK\3\4，空包是结尾记录 PK\5\6
@@ -83,7 +95,7 @@ nonisolated enum ZipNames {
     return parse(directory, count: count)
   }
 
-  /// 中央目录里一条一条的文件头（PK\1\2）：+8 标志位（第 0 位加密，第 11 位是 UTF-8），+28 / +30 / +32 名字、扩展、注释长度，+46 起是名字
+  /// 中央目录里一条一条的文件头（PK\1\2）：+8 标志位（第 0 位加密，第 11 位是 UTF-8），+24 解开后的大小，+28 / +30 / +32 名字、扩展、注释长度，+46 起是名字
   static func parse(_ directory: [UInt8], count: UInt64) -> [Entry]? {
     var entries: [Entry] = []
     var offset = 0
@@ -96,7 +108,9 @@ nonisolated enum ZipNames {
         Entry(
           name: Data(directory[offset + 46..<offset + 46 + nameLength]),
           utf8Flag: directory.u16(offset + 8) & 0x0800 != 0,
-          encrypted: directory.u16(offset + 8) & 0x0001 != 0))
+          encrypted: directory.u16(offset + 8) & 0x0001 != 0,
+          size: directory.u32(offset + 24) == 0xFFFF_FFFF
+            ? nil : UInt64(directory.u32(offset + 24))))
       offset += skip
     }
     return entries

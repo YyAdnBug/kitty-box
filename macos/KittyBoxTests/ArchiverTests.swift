@@ -1,6 +1,7 @@
 // Archiver：真的调包里的 7zz 和系统 tar，在临时目录里各跑一遍往返——zip / 7z、带密码和不带、ZipCrypto、
 // GBK 名字的 zip、忽略清单和空文件夹、解压时去掉杂文件、只有一样东西时不多套一层、隔离标记跟着走、
-// 打包报进度、半路停下不留半个包；外加名字和进度解析的纯函数。
+// 打包报进度、半路停下不留半个包、「看看里面」列出文件（GBK 名字读对、杂文件不列、名字加密的 7z 要密码）；
+// 外加名字和进度解析的纯函数。
 
 import CoreServices
 import Foundation
@@ -186,6 +187,32 @@ struct ArchiverTests {
     #expect(result.lastPathComponent == "报告")
     #expect(box.exists("报告/报告/中文文件.txt"))
     #expect(box.exists("报告/readme.txt"))
+  }
+
+  @Test(arguments: [Archiver.Format.zip, .sevenZip])
+  func contentsListFilesWithoutJunk(format: Archiver.Format) async throws {
+    let box = try Sandbox()
+    let plan = await Archiver.plan([try album(in: box)], rules: rules)
+    let archive = try await Archiver.pack(plan, options: .init(format: format))
+    let entries = try await Archiver.contents(of: archive)
+    #expect(Set(entries.map(\.path)) == ["猫咪相册/封面.txt", "猫咪相册/照片/IMG_0001.txt"])
+    #expect(entries.allSatisfy { $0.size == 2 })
+  }
+
+  @Test func contentsOfGBKZipAndLockedNames() async throws {
+    let box = try Sandbox()
+    let zip = box.root.appending(path: "报告.zip")
+    try zipData([(gbkName, false), (Array("readme.txt".utf8), false)]).write(to: zip)
+    #expect(try await Archiver.contents(of: zip).map(\.path) == ["报告/中文文件.txt", "readme.txt"])
+
+    // 7z 设了密码连文件名也加密：不给密码看不了，给了就能看
+    let plan = await Archiver.plan([try box.file("机密.txt", "secret")], rules: rules)
+    let locked = try await Archiver.pack(
+      plan, options: .init(format: .sevenZip, password: "喵 123"))
+    await #expect(throws: Archiver.Failure.needsPassword) {
+      try await Archiver.contents(of: locked)
+    }
+    #expect(try await Archiver.contents(of: locked, password: "喵 123").map(\.path) == ["机密.txt"])
   }
 
   @Test func severalItemsGoInAFolder() async throws {

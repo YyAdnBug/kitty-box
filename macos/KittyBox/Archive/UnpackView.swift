@@ -1,6 +1,7 @@
 // 解压页（B7–B9）：拖进压缩包就一个接一个解，解到包旁边。有密码的停下来弹框问（不记），密码不对说一声再问；
 // 点了「跳过」那一行留着「输入密码…」。拖到程序坞图标上、⌘V 粘贴的压缩包也进这里（Navigator），直接开始。
-// 表格：压缩包、大小、状态；右键在访达中显示 / 重试 / 移除，⌫ 移除。空着时整页是拖放区。
+// 表格：压缩包、大小、状态；右键看看里面 / 在访达中显示 / 重试 / 移除，双击还没解好的也是看看里面，⌫ 移除，空格快速查看。
+// 空着时整页是拖放区。
 
 import AppKit
 import Observation
@@ -128,6 +129,8 @@ struct UnpackView: View {
   @State private var selection = Set<UnpackModel.Job.ID>()
   /// 正在弹框问密码的那一个
   @State private var asking: UnpackModel.Job.ID?
+  /// 正在「看看里面」的那一个
+  @State private var peeking: UnpackModel.Job?
 
   var body: some View {
     ToolPage(tool: .unpack) {
@@ -192,6 +195,9 @@ struct UnpackView: View {
       }
     }
     .contextMenu(forSelectionType: UnpackModel.Job.ID.self) { ids in
+      if ids.count == 1, let id = ids.first {
+        Button("看看里面…") { peeking = job(id) }
+      }
       Button("在访达中显示") {
         let urls = ids.compactMap { id in job(id).map { $0.result ?? $0.archive } }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
@@ -205,11 +211,18 @@ struct UnpackView: View {
       Divider()
       Button("移除") { model.remove(ids) }
     } primaryAction: { ids in
-      for id in ids { if let url = job(id)?.result { NSWorkspace.shared.open(url) } }
+      // 双击：解好的打开，还没解好的看看里面
+      for id in ids {
+        if let url = job(id)?.result { NSWorkspace.shared.open(url) } else { peeking = job(id) }
+      }
     }
+    .sheet(item: $peeking) { ArchiveContents(job: $0) }
     .tableStyle(.inset(alternatesRowBackgrounds: false))
     .scrollContentBackground(.hidden)
     .onDeleteCommand { model.remove(selection) }
+    .spacePreview {
+      model.jobs.filter { selection.contains($0.id) }.map { $0.result ?? $0.archive }
+    }
   }
 
   private var summary: String {
@@ -262,5 +275,76 @@ private struct JobStatus: View {
     case .failed(let reason):
       FailLine(reason: reason)
     }
+  }
+}
+
+/// 「看看里面」（M6）：包里有哪些文件、各多大、一共多少；连文件名都加了密的包说一声要先输密码
+private struct ArchiveContents: View {
+  let job: UnpackModel.Job
+  @Environment(\.dismiss) private var dismiss
+  @State private var entries: [Archiver.Entry]?
+  @State private var problem: String?
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 12) {
+        FileThumb(url: job.archive, size: 40)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(job.archive.lastPathComponent).font(.headline)
+            .lineLimit(1).truncationMode(.middle)
+          Text(summary).font(.callout).foregroundStyle(.secondary)
+        }
+        Spacer()
+      }
+      .padding(20)
+      Hairline()
+      Group {
+        if let entries {
+          List(entries) { entry in
+            HStack(spacing: 8) {
+              Image(systemName: "doc").foregroundStyle(.secondary)
+              Text(entry.path).lineLimit(1).truncationMode(.middle)
+              Spacer(minLength: 8)
+              Text(entry.size.map { $0.formatted(.byteCount(style: .file)) } ?? "")
+                .monospacedDigit().foregroundStyle(.secondary)
+            }
+          }
+          .listStyle(.inset)
+          .scrollContentBackground(.hidden)
+        } else if let problem {
+          Label(problem, systemImage: "lock.fill").foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+          ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+      }
+      Hairline()
+      HStack {
+        Spacer()
+        Button("好") { dismiss() }
+          .buttonStyle(BrandButtonStyle())
+          .keyboardShortcut(.defaultAction)
+      }
+      .padding(14)
+    }
+    .frame(width: 560, height: 460)
+    .task {
+      do {
+        entries = try await Archiver.contents(of: job.archive, password: job.password)
+      } catch Archiver.Failure.needsPassword, Archiver.Failure.wrongPassword {
+        problem = "这个包连文件名都加了密，输入密码之后才能看。"
+      } catch {
+        problem = error.localizedDescription
+      }
+    }
+  }
+
+  private var summary: String {
+    guard let entries else { return problem == nil ? "正在读…" : "" }
+    let sizes = entries.compactMap(\.size)
+    let total =
+      sizes.count == entries.count && !entries.isEmpty
+      ? " · 解开后共 " + sizes.reduce(0, +).formatted(.byteCount(style: .file)) : ""
+    return entries.isEmpty ? "包里没有文件" : "\(entries.count.formatted()) 个文件" + total
   }
 }

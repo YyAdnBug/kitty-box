@@ -114,6 +114,9 @@ struct ConvertView: View {
     .tableStyle(.inset(alternatesRowBackgrounds: false))
     .scrollContentBackground(.hidden)
     .onDeleteCommand { model.remove(selection) }
+    .spacePreview {
+      model.items.filter { selection.contains($0.id) }.map { $0.result ?? $0.source }
+    }
   }
 
   @ViewBuilder private var optionGroups: some View {

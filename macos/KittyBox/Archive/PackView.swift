@@ -143,6 +143,7 @@ struct PackView: View {
     .tableStyle(.inset(alternatesRowBackgrounds: false))
     .scrollContentBackground(.hidden)
     .onDeleteCommand { model.remove(selection) }
+    .spacePreview { model.items.filter(selection.contains) }
   }
 
   // MARK: 状态栏

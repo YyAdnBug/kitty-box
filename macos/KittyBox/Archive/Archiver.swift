@@ -208,6 +208,57 @@ enum Archiver {
     }
   }
 
+  /// 包里的一个文件（「看看里面」，M6）；大小不知道（tar 一族、ZIP64 的大条目）时是 nil
+  nonisolated struct Entry: Identifiable, Sendable {
+    let path: String
+    let size: Int64?
+    var id: String { path }
+  }
+
+  /// 包里有什么：只列文件（文件夹不算一项），去掉解压时会跳过的杂文件（B7）。zip 读中央目录（GBK 名字也读对），
+  /// tar 一族用 tar -tf（没有大小），别的用 7zz l -slt；连文件名都加了密的 7z 没给对密码时抛 needsPassword / wrongPassword
+  static func contents(of archive: URL, password: String = "") async throws -> [Entry] {
+    let entries: [Entry]
+    if ZipNames.isZip(archive) {
+      guard let raw = ZipNames.entries(of: archive) else { throw Failure.failed("读不出这个 zip。") }
+      let charset = ZipNames.charset(for: raw)
+      entries = raw.map {
+        Entry(path: ZipNames.name(of: $0, charset: charset), size: $0.size.map(Int64.init))
+      }
+    } else if usesTar(archive) {
+      let result = try await Subprocess.run(tar, ["-tf", archive.path], captures: true)
+      guard result.status == 0 else { throw Failure.failed("读不出这个包：" + summary(of: result)) }
+      entries = result.output.split(separator: "\n").map { Entry(path: String($0), size: nil) }
+    } else {
+      let given = password.isEmpty ? "kitty-box-no-password" : password
+      let result = try await Subprocess.run(
+        sevenZip, ["l", "-ba", "-slt", "-sccUTF-8", "-p" + given, archive.path], captures: true)
+      if (result.output + result.error).contains("Wrong password") {
+        throw password.isEmpty ? Failure.needsPassword : Failure.wrongPassword
+      }
+      guard result.status == 0 else { throw Failure.failed("读不出这个包：" + summary(of: result)) }
+      entries = listed(result.output)
+    }
+    return entries.filter {
+      !$0.path.hasSuffix("/") && IgnoreRules.unpackJunk.match($0.path, isDirectory: false) == nil
+    }
+  }
+
+  /// 7zz l -slt 的输出：空行隔开的一段段「键 = 值」；Attributes 以 D 开头或 Folder = + 的是文件夹，不要
+  nonisolated static func listed(_ output: String) -> [Entry] {
+    output.components(separatedBy: "\n\n").compactMap { block in
+      var fields: [String: String] = [:]
+      for line in block.split(separator: "\n") {
+        guard let range = line.range(of: " = ") else { continue }
+        fields[String(line[..<range.lowerBound])] = String(line[range.upperBound...])
+      }
+      guard let path = fields["Path"], !path.isEmpty, fields["Folder"] != "+",
+        fields["Attributes"]?.hasPrefix("D") != true
+      else { return nil }
+      return Entry(path: path, size: fields["Size"].flatMap { Int64($0) })
+    }
+  }
+
   /// 解完之后：去掉杂文件（B7）；包带着「从网上下载」的隔离标记时，解出来的每样东西都带上（同系统的归档实用工具，
   /// 不然包里的 App 打开时不会再被检查）；再挪成正式的名字
   @concurrent nonisolated private static func settle(_ work: URL, from archive: URL, name: String)

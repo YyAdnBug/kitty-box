@@ -75,6 +75,7 @@ struct GeminiView: View {
     .listStyle(.inset)
     .scrollContentBackground(.hidden)
     .onDeleteCommand { if let selection, !batch.running { batch.remove(selection) } }
+    .spacePreview { selected.map { [$0.result ?? $0.source] } ?? [] }
   }
 
   /// 选中的那张；没选（或选的被清掉了）就是第一张
@@ -112,10 +113,10 @@ private struct BeforeAfter: View {
       }
     }
     .task(id: [source, result]) {
-      // ponytail: 预览按长边 2400 解，够屏幕看；要看 1:1 细节再加缩放
-      guard let before = await Thumbnail.load(source, maxPixel: 2400) else { return }
+      // 按原图分辨率解（对比能放大到 1:1 看星标去干净了没有）；长边封顶 16384，再大的图少见
+      guard let before = await Thumbnail.load(source, maxPixel: 16_384) else { return }
       let after: CGImage? =
-        if let result { await Thumbnail.load(result, maxPixel: 2400) } else { nil }
+        if let result { await Thumbnail.load(result, maxPixel: 16_384) } else { nil }
       images = (before, after)
     }
   }

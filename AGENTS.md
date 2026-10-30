@@ -16,7 +16,7 @@
 ## 技术栈
 
 - Swift 6 语言模式，默认 `MainActor` 隔离 + approachable concurrency。
-- SwiftUI + AppKit；ImageIO、Core Image、Core ML、AVFoundation。
+- SwiftUI + AppKit；ImageIO、Core Image、Core ML、AVFoundation、QuickLook（空格快速查看）。
 - 系统命令：`/usr/bin/tar`（zip 解压）。
 - 第三方：只有随包的 `7zz`（7-Zip 26.05，`fetch-vendor.sh` 按 SHA256 拉，不入库）；数据文件：Gemini α 图（随包）、LaMa 模型（不随包，画笔擦除第一次用时下载到 Application Support，`Watermark/LaMaModel.swift`）。
 - Xcode 27 工程，构建设置全在 xcconfig；`hdiutil` 打 DMG；Apple Development 签名（Team `HTX9F4KG39`），不公证。

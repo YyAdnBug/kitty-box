@@ -92,6 +92,7 @@ struct SnapshotProbeTests {
     let movie = samples.appending(path: "录屏.mov")
     try await makeTestVideo(at: movie)
     navigator.video.load(movie)
+    navigator.videoConvert.add([movie])
     try await Task.sleep(for: .seconds(2))
     let image = try #require(navigator.erase.image)
     let (cx, cy) = (CGFloat(image.width) * 0.55, CGFloat(image.height) * 0.62)

@@ -6,10 +6,10 @@ import AppKit
 import SwiftUI
 
 struct GeminiView: View {
-  @Bindable var batch: ImageBatch
+  @Bindable var batch: FileBatch
   /// 认不出的图交给画笔擦除
   let handOff: (URL) -> Void
-  @State private var selection: ImageBatch.Item.ID?
+  @State private var selection: FileBatch.Item.ID?
 
   var body: some View {
     ToolPage(tool: .gemini) {
@@ -79,7 +79,7 @@ struct GeminiView: View {
   }
 
   /// 选中的那张；没选（或选的被清掉了）就是第一张
-  private var selected: ImageBatch.Item? {
+  private var selected: FileBatch.Item? {
     batch.items.first { $0.id == selection } ?? batch.items.first
   }
 

@@ -1,6 +1,7 @@
-// 文件在列表 / 表格里显示的几样：小图（图片用 ImageIO 出缩略图、按方向转正，别的用访达的图标）、种类、大小、图片的像素尺寸、
+// 文件在列表 / 表格里显示的几样：小图（图片用 ImageIO 出缩略图、按方向转正，视频取第一帧，别的用访达的图标）、种类、大小、图片的像素尺寸、
 // 处理前后大小差多少。每一格自己在后台读（只读文件头和属性，很快），不另建缓存。去水印的预览和对比图也用 Thumbnail.load。
 
+import AVFoundation
 import AppKit
 import ImageIO
 import SwiftUI
@@ -15,6 +16,16 @@ enum Thumbnail {
       kCGImageSourceThumbnailMaxPixelSize: maxPixel,
     ]
     return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+  }
+}
+
+extension Thumbnail {
+  /// 视频的第一帧当小图（转正）；读不了是 nil
+  @concurrent nonisolated static func firstFrame(_ url: URL, maxPixel: Int) async -> CGImage? {
+    let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+    generator.appliesPreferredTrackTransform = true
+    generator.maximumSize = CGSize(width: maxPixel, height: maxPixel)
+    return try? await generator.image(at: .zero).image
   }
 }
 
@@ -68,8 +79,11 @@ struct FileThumb: View {
     }
     .accessibilityHidden(true)
     .task(id: url) {
-      guard ImageConverter.canRead(url) else { return }
-      image = await Thumbnail.load(url, maxPixel: Int(size * scale))
+      if ImageConverter.canRead(url) {
+        image = await Thumbnail.load(url, maxPixel: Int(size * scale))
+      } else if VideoDelogo.isVideo(url) {
+        image = await Thumbnail.firstFrame(url, maxPixel: Int(size * scale))
+      }
     }
   }
 }

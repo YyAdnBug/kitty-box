@@ -8,9 +8,9 @@ import Testing
 
 @testable import KittyBox
 
-/// 造一段 160 × 120、10 帧的视频：蓝底，右上角 (120, 8) 起 30 × 16 的白块当台标（截图自检也用）
-func makeTestVideo(at url: URL) async throws {
-  let (width, height) = (160, 120)
+/// 造一段 160 × 120（可以给别的大小）、10 帧、1 秒的视频：蓝底，右上角 (120, 8) 起 30 × 16 的白块当台标
+/// （截图自检、视频转换也用）
+func makeTestVideo(at url: URL, width: Int = 160, height: Int = 120) async throws {
   let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
   let input = AVAssetWriterInput(
     mediaType: .video,
@@ -52,8 +52,8 @@ func makeTestVideo(at url: URL) async throws {
   #expect(writer.status == .completed)
 }
 
-/// 在 makeTestVideo 那段视频上配 1 秒 440 Hz 的 AAC 音轨，合成一个 .mov（音视频都原样拼进去）
-private func makeTestVideoWithSound(at url: URL, in root: URL) async throws {
+/// 在 makeTestVideo 那段视频上配 1 秒 440 Hz 的 AAC 音轨，合成一个 .mov（音视频都原样拼进去；视频转换也用）
+func makeTestVideoWithSound(at url: URL, in root: URL) async throws {
   let picture = root.appending(path: "无声.mov")
   try await makeTestVideo(at: picture)
   let sound = root.appending(path: "声音.m4a")

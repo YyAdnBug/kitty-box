@@ -142,7 +142,7 @@
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyBoxApp.swift`（`@main`，主窗口）、`Services.swift`（访达「服务」菜单的四项，M5）、`AppDelegate.swift`（启动时登记服务；`application(_:open:)`：拖到程序坞图标上、「打开方式」选了本 App 的文件交给 Navigator；能收哪些写在 `Config/Info.plist` 的 `CFBundleDocumentTypes`：压缩包 Alternate，其余 None） |
-| `Shell/` | `MainView.swift`（主窗口：侧边栏 + 工具页，`Tool` 六个工具和分组，侧边栏自己画的品牌粉选中，「添加文件…」弹选文件、收到文件问交给谁）、`ToolPage.swift`（工具页的骨架：页头、右边选项栏和选项卡片、状态栏，空着时的拖放区、整页收拖放的描边）、`Paste.swift`（⌘V：剪贴板里的文件或图片数据交给 Navigator）、`FileThumb.swift`（缩略图和表格里的种类、大小、尺寸、转换后差多少）、`ResultLine.swift`（做完 / 没做成的那一行字）、`Navigator.swift`（选中哪个工具 + 收进来的文件往哪送，见 §2「界面」；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`ImageBatch.swift`（一批图一张一张处理的列表模型和一行的样子：图片转换和 Gemini 角标共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度：品牌粉、奶油底、选中色、发丝线、品牌粉主按钮，加四类工具的家族色和画布上浮着的控制栏）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
+| `Shell/` | `MainView.swift`（主窗口：侧边栏 + 工具页，`Tool` 六个工具和分组，侧边栏自己画的品牌粉选中，「添加文件…」弹选文件、收到文件问交给谁）、`ToolPage.swift`（工具页的骨架：页头、右边选项栏和选项卡片、状态栏，空着时的拖放区、整页收拖放的描边）、`Paste.swift`（⌘V：剪贴板里的文件或图片数据交给 Navigator）、`FileThumb.swift`（缩略图和表格里的种类、大小、尺寸、转换后差多少）、`ResultLine.swift`（做完 / 没做成的那一行字）、`Navigator.swift`（选中哪个工具 + 收进来的文件往哪送，见 §2「界面」；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`FileBatch.swift`（一批图一张一张处理的列表模型和一行的样子：图片转换和 Gemini 角标共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度：品牌粉、奶油底、选中色、发丝线、品牌粉主按钮，加四类工具的家族色和画布上浮着的控制栏）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
 | `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、解完的清理和挪位置）、`PackView.swift`（打包页和它的 PackModel）、`UnpackView.swift`（解压页和它的 UnpackModel：一个接一个解、就地问密码） |
 | `ImageConvert/` | `ImageConverter.swift`（ImageIO 读写、转正方向、图标格式）、`ConvertView.swift`（转换页和它的 ConvertModel） |
 | `Watermark/` | `GeminiMark.swift`（找星标、反解、另存）、`VideoDelogo.swift`（第一帧、补像素、导出）、`Inpainter.swift`（LaMa：裁、补、羽化贴回）、`EraseCanvas.swift`（画笔擦除：一笔一擦、撤销、缩放、对比、存储）、`GeminiView.swift`（Gemini 角标页：一批图 + 预览对比）、`VideoMarkView.swift`（视频台标：第一帧上拖框、导出）、`CompareSlider.swift`（前后对比：拖中间的线） |
@@ -165,7 +165,7 @@
 - `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带（zip 的条目都标了加密）、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走、打 160 MB 的包边打边报进度、报了之后停下不留半个包、压缩级别（存储比原文大、最小压到二十分之一以下）；外加名字、分卷、7zz 进度解析的纯函数；
 - `ImageConverterTests`：10 种格式各转一遍（类型、尺寸、JPEG 透明处是白的、图标是正方形）、拍摄信息带过去和转正方向、动图留着每一帧、能读什么、缩到长边上限（小图不放大）、去掉定位只去 GPS；
 - `NavigatorTests`：收进来的文件往哪送（当前工具收得了给它、有图片视频就问、别的打包；拖进工具页先给当前工具）、哪些工具能收、记住上次选的工具（临时偏好域）、「服务」菜单交给指明的工具；
-- `ImageBatchTests`：8 张一起做：全做完、失败的那张对得上，同时在做的不止一张、不超过 4 张；
+- `FileBatchTests`：8 张一起做：全做完、失败的那张对得上，同时在做的不止一张、不超过 4 张；
 - `PasteTests`：剪贴板里的文件原样交出去、只有图片数据时按原格式存成文件（重名不覆盖）、只有文字时什么都不交、粘贴到工具页交给这个工具；用自己起名的剪贴板，不碰用户的；
 - `UpdaterTests`：latest release 的 JSON 怎么认、版本号按数字比；
 - `SnapshotProbeTests`：截图自检（照 Kitty Tools）：关于窗口屏外画成 PNG；主窗口（侧边栏、页头、右边的选项）屏外画不出来，开一扇真窗口（`NSHostingView` 桥接工具栏，按 key 窗口画），先截一张空着的打包页，再带着示例数据一个工具停 3.5 秒，窗口编号写进 `live-<工具>.txt` 由外面 `screencapture -l` 截；模型下载过的话在系统壁纸上真擦一处存 `erase-result.png`、再截一张对比；偏好用临时域；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
@@ -193,7 +193,7 @@
 - **界面重做**（2026-10-30 做完三轮）：第一轮紧凑工具栏、首页卡片、拖放区、⌘V 粘贴、前后对比；用户说「一点都不成熟」，第二轮照成熟产品改成侧边栏 + 表格 + 右边选项 + 工具栏操作 + 状态栏，画笔擦除一笔一擦能放大（见 §2「界面」）。第三轮（同日，用户报检查器把侧边栏挤收起、出现「»」、顶上颜色不一致，要「自己应用的风格」）照 Kitty Tools 设置窗改：操作挪进页头、选项改成页里固定一栏卡片、工具栏清空、侧边栏品牌粉选中、关于窗口品牌页。**待你手测**：⌘V 粘贴文件和截图、拖动对比线、画笔擦除的捏合放大和一笔一擦、解压的密码框（这些只能真按键 / 真拖，自检没覆盖）。
 - **M5 好用一点**（2026-10-30 做完，共 64 个单测；用户说「继续规划剩下的，添加新的功能和优化，不用问我」）：
   1. 图片转换：缩放（原尺寸 / 长边 3840、2560、1920、1280、800，只缩不放）、「去掉定位」开关（C3 当时说第一版不加）；
-  2. 一批图（图片转换、Gemini 角标）按核数并发处理（最多 4 张，ImageBatch 的 ponytail）；
+  2. 一批图（图片转换、Gemini 角标）按核数并发处理（最多 4 张，FileBatch 的 ponytail）；
   3. 打包：压缩级别（存储 / 快 / 标准 / 最小）；
   4. 解压：「解完把压缩包移到废纸篓」开关（默认关；分卷包不挪）；
   5. 做好的结果能直接从表格 / 列表里拖到访达或别的 App；

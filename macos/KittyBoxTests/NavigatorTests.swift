@@ -82,6 +82,8 @@ final class NavigatorTests {
     #expect(navigator.accepts(.gemini, [photo]))
     #expect(navigator.accepts(.erase, [photo]))
     #expect(navigator.accepts(.video, [movie]))
+    #expect(navigator.accepts(.videoConvert, [movie]))
+    #expect(!navigator.accepts(.videoConvert, [photo]))
     #expect(!navigator.accepts(.video, [photo]))
     #expect(!navigator.accepts(.convert, [movie]))
   }

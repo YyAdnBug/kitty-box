@@ -7,12 +7,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ConvertView: View {
-  @Bindable var model: ImageBatch
+  @Bindable var model: FileBatch
   @AppStorage(Prefs.convertFormat) private var format = ImageConverter.Format.jpeg
   @AppStorage(Prefs.convertQuality) private var quality = 0.85
   @AppStorage(Prefs.convertMaxSide) private var maxSide = 0
   @AppStorage(Prefs.convertStripLocation) private var stripLocation = false
-  @State private var selection = Set<ImageBatch.Item.ID>()
+  @State private var selection = Set<FileBatch.Item.ID>()
 
   var body: some View {
     ToolPage(tool: .convert) {
@@ -64,7 +64,7 @@ struct ConvertView: View {
   }
 
   private var table: some View {
-    Table(of: ImageBatch.Item.self, selection: $selection) {
+    Table(of: FileBatch.Item.self, selection: $selection) {
       TableColumn("图片") { item in
         HStack(spacing: 8) {
           FileThumb(url: item.source, size: 28)
@@ -95,7 +95,7 @@ struct ConvertView: View {
         TableRow(item).itemProvider { NSItemProvider(contentsOf: item.result ?? item.source) }
       }
     }
-    .contextMenu(forSelectionType: ImageBatch.Item.ID.self) { ids in
+    .contextMenu(forSelectionType: FileBatch.Item.ID.self) { ids in
       let picked = model.items.filter { ids.contains($0.id) }
       Button("打开原图") { for item in picked { NSWorkspace.shared.open(item.source) } }
       if picked.contains(where: { $0.result != nil }) {

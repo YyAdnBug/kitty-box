@@ -155,32 +155,28 @@ struct EraseCanvas: View {
           .resizable()
           .frame(width: size.width * scale, height: size.height * scale)
           .offset(x: origin.x, y: origin.y)
-        Canvas { context, _ in
-          for stroke in model.strokes + (drawing.map { [$0] } ?? []) {
-            var path = Path()
-            path.addLines(
-              stroke.points.map { CGPoint(x: origin.x + $0.x * scale, y: origin.y + $0.y * scale) })
-            if stroke.points.count == 1, let point = path.currentPoint { path.addLine(to: point) }
-            context.stroke(
-              path, with: .color(Color.accentColor.opacity(0.5)),
-              style: StrokeStyle(lineWidth: stroke.width * scale, lineCap: .round, lineJoin: .round)
-            )
+        // 笔画用普通的 Path 叠上去（不用 Canvas：屏外截图自检抓不到 Canvas，整页会画坏，2026-10-30 实测）
+        ForEach(Array((model.strokes + (drawing.map { [$0] } ?? [])).enumerated()), id: \.offset) {
+          _, stroke in
+          Path { path in
+            let points = stroke.points.map {
+              CGPoint(x: origin.x + $0.x * scale, y: origin.y + $0.y * scale)
+            }
+            path.addLines(points.count == 1 ? [points[0], points[0]] : points)
           }
-          if let hover {
-            context.stroke(
-              Path(
-                ellipseIn: CGRect(
-                  x: hover.x - brush / 2, y: hover.y - brush / 2, width: brush, height: brush)),
-              with: .color(.white), lineWidth: 1.5)
-            context.stroke(
-              Path(
-                ellipseIn: CGRect(
-                  x: hover.x - brush / 2 - 1, y: hover.y - brush / 2 - 1, width: brush + 2,
-                  height: brush + 2)),
-              with: .color(.black.opacity(0.5)), lineWidth: 1)
-          }
+          .stroke(
+            Color.accentColor.opacity(0.5),
+            style: StrokeStyle(lineWidth: stroke.width * scale, lineCap: .round, lineJoin: .round)
+          )
+          .allowsHitTesting(false)
         }
-        .allowsHitTesting(false)
+        if let hover {
+          Circle().stroke(.white, lineWidth: 1.5)
+            .overlay { Circle().stroke(.black.opacity(0.5), lineWidth: 1).padding(-1) }
+            .frame(width: brush, height: brush)
+            .position(hover)
+            .allowsHitTesting(false)
+        }
       }
       .contentShape(Rectangle())
       .gesture(

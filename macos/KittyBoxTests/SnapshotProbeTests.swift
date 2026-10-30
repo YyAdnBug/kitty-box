@@ -1,5 +1,5 @@
-// 界面截图自检（照 Kitty Tools 的 SnapshotProbeTests）：把各工具页带着示例数据画在屏幕外的窗口里，存成 PNG 看一眼。
-// 不弹窗、不抢键盘；只读偏好，不写。平时跳过，要看时：
+// 界面截图自检（照 Kitty Tools 的 SnapshotProbeTests）：把各工具页带着示例数据画在屏幕外的窗口里，存成 PNG 看一眼；
+// 画笔擦除页例外（屏外抓不到，见下面），会在屏幕左下角开一扇窗停 8 秒，不当 key、不抢键盘。只读偏好，不写。平时跳过，要看时：
 // TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-box-shots xcodebuild -project macos/KittyBox.xcodeproj -scheme KittyBox \
 //   test -only-testing:KittyBoxTests/SnapshotProbeTests
 
@@ -25,6 +25,8 @@ struct SnapshotProbeTests {
         at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
       try Data("x".utf8).write(to: url)
     }
+
+    try await shoot(AboutView(), "about", height: 560)
 
     let convert = ImageBatch()
     convert.items = [
@@ -77,7 +79,18 @@ struct SnapshotProbeTests {
     watermark.erase.strokes = [
       .init(points: [CGPoint(x: cx - 300, y: cy), CGPoint(x: cx + 300, y: cy)], width: 160)
     ]
-    try await shoot(WatermarkView(model: watermark), "watermark-erase", height: 560)
+    // 画笔擦除页屏外截图抓不到（整页发黑，2026-10-30 实测；放进真窗口一切正常）：放进一个真的屏幕窗口停 8 秒，
+    // 窗口编号写进 erase-window.txt，由外面用 screencapture -l <编号> 截
+    let live = NSWindow(
+      contentRect: NSRect(x: 80, y: 80, width: 720, height: 560), styleMask: [.titled],
+      backing: .buffered, defer: false)
+    live.appearance = NSAppearance(named: .aqua)
+    live.contentView = NSHostingView(rootView: NavigationStack { WatermarkView(model: watermark) })
+    live.orderFrontRegardless()
+    try "\(live.windowNumber)".write(
+      to: folder.appending(path: "erase-window.txt"), atomically: true, encoding: .utf8)
+    try await Task.sleep(for: .seconds(8))
+    live.orderOut(nil)
     await watermark.erase.erase()
     let erased = try #require(watermark.erase.image)
     let crop = try #require(
@@ -97,6 +110,9 @@ struct SnapshotProbeTests {
       backing: .buffered, defer: false)
     window.contentView = NSHostingView(
       rootView: NavigationStack { page }.frame(width: size.width, height: size.height))
+    // 固定浅色：系统按日落自动切到深色时，屏外窗口画出来白底白字（2026-10-30 实测），截图要和系统设置无关
+    window.appearance = NSAppearance(named: .aqua)
+    window.backgroundColor = .windowBackgroundColor
     window.orderFrontRegardless()
     defer { window.orderOut(nil) }
     try await Task.sleep(for: .milliseconds(600))

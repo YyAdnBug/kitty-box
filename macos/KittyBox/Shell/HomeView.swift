@@ -52,6 +52,7 @@ struct HomeView: View {
   var body: some View {
     NavigationStack(path: $navigator.path) {
       VStack(spacing: 12) {
+        if let release = Updater.shared.available { updateBanner(release) }
         if !navigator.pending.isEmpty { pendingBanner }
         HStack(spacing: 12) {
           ForEach(Tool.allCases) { tool in
@@ -94,6 +95,18 @@ struct HomeView: View {
       minHeight: navigator.path.isEmpty ? (navigator.pending.isEmpty ? 220 : 270) : 560
     )
     .onAppear { navigator.openWindow = openWindow }
+  }
+
+  /// 有新版本时顶上的一条，点了打开关于窗口
+  private func updateBanner(_ release: Updater.Release) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
+      Text("有新版本 \(release.version)")
+      Spacer()
+      Button("看看") { openWindow(id: KittyBoxApp.aboutID) }.buttonStyle(.link)
+    }
+    .padding(.horizontal, 12).padding(.vertical, 8)
+    .cardSurface()
   }
 
   /// 收到文件、还没选工具时顶上的一条

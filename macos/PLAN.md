@@ -120,7 +120,8 @@
 | 仓库根目录 | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/box-native.mdc`、`.gitignore` |
 
 - 一个概念一个文件，不预建空目录。
-- 应用内更新（`Updater.swift`）和关于页，等第一次发版时再从 Kitty Tools 拷过来。
+- 应用内更新 `App/Updater.swift`：从 Kitty Tools 摘核心（读 latest release、比版本号、下载 `_arm64.zip`、ditto 解包、按本团队签名验签、换掉、重新打开），去掉刘海岛和菜单栏角标那些；下载进度的 KVO 令牌放进 `Mutex`（不用 `nonisolated(unsafe)`）。打开 App 10 秒后查一次，App 菜单「检查更新…」、关于窗口也能查；有新版本时首页顶上一条。
+- 关于窗口 `App/AboutView.swift`：图标、版本、检查更新 / 更新并重新打开、更新日志（`Resources/changelog.json`）、随包第三方组件和 NOTICE 链接。App 菜单「关于 Kitty Box」换成它。
 
 **单测**（Swift Testing，不写真实偏好）：
 - `ZipNamesTests`：三种 zip 的字节夹具——有 UTF-8 标志、没标志但写的是 UTF-8、没标志写的是 GBK；
@@ -132,7 +133,8 @@
 - `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走；外加名字的纯函数；
 - `ImageConverterTests`：10 种格式各转一遍（类型、尺寸、JPEG 透明处是白的、图标是正方形）、拍摄信息带过去和转正方向、动图留着每一帧、能读什么；
 - `NavigatorTests`：拖进来的文件往哪送、哪几格能收；
-- `SnapshotProbeTests`：屏外截图自检（照 Kitty Tools），把各工具页（打包、解压、转换、去水印的 Gemini 和视频台标）带着示例数据画成 PNG；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
+- `UpdaterTests`：latest release 的 JSON 怎么认、版本号按数字比；
+- `SnapshotProbeTests`：屏外截图自检（照 Kitty Tools），把各工具页（打包、解压、转换、去水印的 Gemini 和视频台标、关于窗口）带着示例数据画成 PNG；画笔擦除页屏外抓不到（整页发黑），改成开一扇真窗口停 8 秒、由外面 `screencapture -l` 截，再在系统壁纸上真擦一处存 `erase-result.png`；截图固定浅色外观（系统按日落切深色时屏外画出来白底白字）；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
 
 ## 4. 签名与打包
 

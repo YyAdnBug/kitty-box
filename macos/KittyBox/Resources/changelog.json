@@ -1,0 +1,14 @@
+[
+  {
+    "version": "0.1.0",
+    "date": "2026-10-30",
+    "summary": "第一版：打包、解压、图片转换、去水印。",
+    "changes": [
+      { "type": "feat", "scope": "打包", "text": "zip / 7z，可设密码；忽略清单默认去掉系统杂文件，开发目录一键勾上，也能自己加规则；打包前列出 Windows 不认的文件名" },
+      { "type": "feat", "scope": "解压", "text": "zip、7z、RAR、tar、iso 等；Windows 打的 zip 中文名不乱码；带密码的就地问；__MACOSX 这类杂文件不解出来" },
+      { "type": "feat", "scope": "图片转换", "text": "HEIC、WebP、AVIF、RAW 等转成 JPEG、PNG、HEIC、AVIF 等 10 种格式；拍摄信息带过去，竖拍的照片自动转正" },
+      { "type": "feat", "scope": "去水印", "text": "Gemini 生成图的角标按原理还原；画笔涂哪擦哪（本机模型补全）；视频的固定台标逐帧补掉" },
+      { "type": "feat", "scope": "通用", "text": "文件拖到程序坞图标上就能用；结果都放在原文件旁边，原文件不动；App 内更新" }
+    ]
+  }
+]

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let services = Services()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    Appearance(rawValue: UserDefaults.standard.string(forKey: Prefs.appearance) ?? "")?.apply()
     NSApp.servicesProvider = services
     NSUpdateDynamicServices()
   }

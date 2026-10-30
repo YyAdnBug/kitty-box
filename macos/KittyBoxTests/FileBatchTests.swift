@@ -44,15 +44,18 @@ struct FileBatchTests {
     )
     #expect(batch.items.count == 3)
     #expect(batch.skipped == 1)
+    // 一个要做一分钟的活：停下之前不可能做完（别的测试同时在主线程上跑重活，按时间等不靠谱）
     batch.start(lanes: 1) { source, progress in
       progress(0.5)
-      try await Task.sleep(for: .seconds(5))
+      try await Task.sleep(for: .seconds(60))
       return source
     }
-    for _ in 0..<50 where !batch.running { try await Task.sleep(for: .milliseconds(10)) }
-    try await Task.sleep(for: .milliseconds(100))
+    for _ in 0..<500 {
+      if case .running = batch.items[0].state { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
     batch.stop()
-    for _ in 0..<200 where batch.running { try await Task.sleep(for: .milliseconds(10)) }
+    for _ in 0..<3000 where batch.running { try await Task.sleep(for: .milliseconds(10)) }
     #expect(!batch.running)
     let states = batch.items.map(\.state)
     if case .failed(let reason) = states[0] {

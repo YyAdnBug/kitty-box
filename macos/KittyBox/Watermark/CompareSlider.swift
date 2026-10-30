@@ -7,6 +7,8 @@ import SwiftUI
 struct CompareSlider: View {
   let before: CGImage
   let after: CGImage
+  /// 去背景：结果透明的地方垫一层棋盘格（看得出哪里是透明的）
+  var checkerboard = false
   /// 线的位置：0 全是去掉之后的，1 全是原图
   @State private var split: CGFloat = 0.5
   /// 放大倍数：1 = 整张放得下
@@ -45,6 +47,9 @@ struct CompareSlider: View {
   private func pane(_ size: CGSize) -> some View {
     let x = size.width * split
     return ZStack(alignment: .topLeading) {
+      if checkerboard {
+        Image(decorative: Self.checker, scale: 1).resizable(resizingMode: .tile)
+      }
       Image(decorative: after, scale: 1).resizable()
       Image(decorative: before, scale: 1).resizable()
         .mask(alignment: .leading) { Rectangle().frame(width: x) }
@@ -63,7 +68,7 @@ struct CompareSlider: View {
       HStack {
         tag("原图").opacity(split > 0.12 ? 1 : 0)
         Spacer()
-        tag("去水印后").opacity(split < 0.88 ? 1 : 0)
+        tag(checkerboard ? "去背景后" : "去水印后").opacity(split < 0.88 ? 1 : 0)
       }
       .padding(8)
     }
@@ -100,6 +105,19 @@ struct CompareSlider: View {
   private func clamp(_ value: CGFloat, fit: CGFloat) -> CGFloat {
     min(max(value, 1), max(4 / (fit * displayScale), 1))
   }
+
+  /// 棋盘格的一块（16 × 16，浅灰白相间；铺满用 tile）
+  private static let checker: CGImage = {
+    let context = CGContext(
+      data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+    context.setFillColor(gray: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+    context.setFillColor(gray: 0.86, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+    context.fill(CGRect(x: 8, y: 8, width: 8, height: 8))
+    return context.makeImage()!
+  }()
 
   private func tag(_ text: String) -> some View {
     Text(text)

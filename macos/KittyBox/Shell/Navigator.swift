@@ -20,7 +20,8 @@ import SwiftUI
   let unpack = UnpackModel()
   let convert = FileBatch()
   let videoConvert = FileBatch(accepts: VideoDelogo.isVideo)
-  let gemini = FileBatch()
+  let cutout = FileBatch()
+  let aiMark = FileBatch()
   let erase = EraseModel()
   let video = VideoMarkModel()
   /// 收到了、要问交给哪个工具的文件
@@ -44,7 +45,8 @@ import SwiftUI
     case .unpack: unpack.add(urls.filter(Archiver.isArchive))
     case .convert: convert.add(urls)
     case .videoConvert: videoConvert.add(urls)
-    case .gemini: gemini.add(urls)
+    case .cutout: cutout.add(urls)
+    case .aiMark: aiMark.add(urls)
     case .erase: if let first = urls.first(where: ImageConverter.canRead) { erase.load(first) }
     case .video: if let first = urls.first(where: VideoDelogo.isVideo) { video.load(first) }
     }
@@ -99,7 +101,7 @@ extension Tool {
     switch self {
     case .pack: true
     case .unpack: Archiver.isArchive(url)
-    case .convert, .gemini, .erase: ImageConverter.canRead(url)
+    case .convert, .cutout, .aiMark, .erase: ImageConverter.canRead(url)
     case .video, .videoConvert: VideoDelogo.isVideo(url)
     }
   }

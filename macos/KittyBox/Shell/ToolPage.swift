@@ -1,5 +1,6 @@
 // 工具页的骨架（六个工具页共用，照 Kitty Tools 设置窗的页）：
 // - 页头（PageHeader）：40 pt 家族色块 + 标题（title2）+ 一句说明（callout），右边这一页的操作按钮，最右是品牌粉主按钮。
+//   页头顶到窗口最上面（占了标题栏那一排，空白处能拖窗口），不另留一条空的标题栏。
 //   操作放页头、不放窗口工具栏：工具栏按钮多了窗口一窄就收进「»」，各栏的工具栏底色也不一样（2026-10-30 用户报）。
 // - 中间内容；有选项的页（打包、图片转换）右边固定一栏选项（OptionGroup 卡片），不用系统的检查器：它在窗口不够宽时
 //   会先把侧边栏收起来再展开自己（2026-10-30 用户报）。
@@ -39,6 +40,8 @@ struct ToolPage<Actions: View, Content: View, Options: View, Status: View>: View
         .frame(height: 28)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+    // 页头顶到窗口最上面、和红绿灯一排（原来压在 28 pt 的标题栏下面，上面空着一大条，2026-10-30 用户报）
+    .ignoresSafeArea(.container, edges: .top)
     .navigationTitle(tool.title)
   }
 }
@@ -71,8 +74,10 @@ private struct PageHeader<Actions: View>: View {
       HStack(spacing: 8) { actions }.fixedSize()
     }
     .padding(.horizontal, 20)
-    .padding(.top, 8)
-    .padding(.bottom, 14)
+    .padding(.top, 12)
+    .padding(.bottom, 12)
+    // 页头占了标题栏那一排：空白处照样能按住拖窗口
+    .background { Color.clear.contentShape(Rectangle()).gesture(WindowDragGesture()) }
   }
 }
 

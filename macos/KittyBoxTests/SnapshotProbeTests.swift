@@ -38,6 +38,7 @@ struct SnapshotProbeTests {
     }
 
     try await shoot(AboutView(), "about", height: 560)
+    try await shoot(SettingsView(), "settings", height: 680)
 
     let suite = "kittybox-test-\(UUID())"
     defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -47,7 +48,9 @@ struct SnapshotProbeTests {
       contentRect: NSRect(x: 60, y: 60, width: 1040, height: 680),
       styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
       backing: .buffered, defer: false)
-    window.toolbarStyle = .unifiedCompact
+    // 同 App 的主窗口（hiddenTitleBar）：标题栏透明、不显示标题，页头顶到最上面
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
     // 当成 key 窗口画（侧边栏选中是品牌粉）：真窗口在测试里当不了 key，也不该抢用户的键盘
     let hosting = NSHostingView(
       rootView: MainView(navigator: navigator).environment(\.controlActiveState, .key))
@@ -78,7 +81,7 @@ struct SnapshotProbeTests {
       .init(source: samples.appending(path: "坏的.webp"), state: .failed("读不出这张图。")),
     ]
 
-    navigator.gemini.items = [
+    navigator.aiMark.items = [
       .init(
         source: samples.appending(path: "Gemini_Generated_Image_1.png"),
         state: .done(samples.appending(path: "Gemini_Generated_Image_1-去水印.png"))),
@@ -93,6 +96,10 @@ struct SnapshotProbeTests {
     try await makeTestVideo(at: movie)
     navigator.video.load(movie)
     navigator.videoConvert.add([movie])
+    navigator.cutout.items = [
+      .init(source: samples.appending(path: "IMG_0001.png")),
+      .init(source: samples.appending(path: "截图 2026-10-30.png"), state: .failed("没认出主体。")),
+    ]
     try await Task.sleep(for: .seconds(2))
     let image = try #require(navigator.erase.image)
     let (cx, cy) = (CGFloat(image.width) * 0.55, CGFloat(image.height) * 0.62)
@@ -107,7 +114,7 @@ struct SnapshotProbeTests {
     }
 
     // 真的擦一处（同一条路：裁、缩、补、贴回），存成 PNG 看接缝；再截一张前后对比
-    guard LaMaModel.isInstalled else { return }
+    guard InpaintModel.standard.isInstalled else { return }
     navigator.tool = .erase
     await navigator.erase.erase()
     let erased = try #require(navigator.erase.image)

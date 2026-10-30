@@ -58,6 +58,8 @@ struct RunningProgress: View {
 extension NSApplication {
   /// 一件事做完时 App 在后台：程序坞图标跳一下（只跳一次，不一直喊）
   func bounceIfInBackground() {
-    if !isActive { requestUserAttention(.informationalRequest) }
+    // 设置 › 通用「做完时程序坞图标跳一下」关了就不跳（没设过算开着）
+    let wanted = UserDefaults.standard.object(forKey: Prefs.bounceWhenDone) as? Bool ?? true
+    if wanted, !isActive { requestUserAttention(.informationalRequest) }
   }
 }

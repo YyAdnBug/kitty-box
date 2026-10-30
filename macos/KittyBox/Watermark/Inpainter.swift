@@ -1,12 +1,12 @@
-// 画笔擦除的补图（D2、D3）：LaMa 的 Core ML 版（mlboydaisuke/LaMa-CoreML，FP32，Apache-2.0；不随包，第一次用时由 LaMaModel
-// 下载到 Application Support）。输入 800×800 的图和 8 位灰度遮罩（白 = 要补），出 800×800 的图；遮罩外的像素它原样带过。
-// 大图不缩整张：在遮罩外接框四周留一圈上下文裁一块（尽量正方形），缩到 800 推理，再放大回那块的尺寸，只按遮罩把补好的贴回原图，
+// 补图（D2、D3，画笔擦除和 AI 水印共用）：用设置里选的模型（InpaintModel：快速 MI-GAN 512 / 标准 LaMa 800 / 高清 Big LaMa 2048，
+// 不随包，用时下载到 Application Support）。输入模型边长见方的图和 8 位灰度遮罩（白 = 要补），出同样大的图；遮罩外的像素它原样带过。
+// 大图不缩整张：在遮罩外接框四周留一圈上下文裁一块（尽量正方形），缩到模型的边长推理，再放大回那块的尺寸，只按遮罩把补好的贴回原图，
 // 原图分辨率不变。贴回用的遮罩边缘羽化一下（按缩放比例模糊几个像素）：大块区域缩过再放大，补出来的颜色会差一两个色阶，
 // 硬边贴回去能看出一圈轮廓（M4 在真照片上看到的）。
 // ponytail: 涂得很大（裁出来的块超过 800、要缩小）时，补出来的地方少了原图的细颗粒，仔细看还有一圈很淡的轮廓；
-// 去水印一般只涂一两百像素，块不超过 800 就不缩。要更好再加颗粒匹配
+// 去水印一般只涂一两百像素，块不超过模型边长就不缩。要更好再加颗粒匹配（或选「高清」）
 // 计算单元只用 CPU + GPU：M4 实测一次 0.7 s；加上神经网络引擎反而 3–4 s，第一次还要先编译将近两分钟。
-// 模型第一次用时加载（约 1 s），之后留在这个 actor 里。
+// 模型第一次用时加载（约 1 s），之后留在这个 actor 里（每个模型一份；设置里删了就丢掉）。
 
 import CoreGraphics
 import CoreImage
@@ -16,7 +16,6 @@ import Foundation
 
 actor Inpainter {
   static let shared = Inpainter()
-  static let side = 800
 
   enum Failure: LocalizedError {
     case noModel
@@ -30,26 +29,31 @@ actor Inpainter {
     }
   }
 
-  private var model: MLModel?
+  private var loaded: [InpaintModel: MLModel] = [:]
 
   /// 把 image 里 mask 白的地方补掉；mask 和 image 一样大、8 位灰度。没涂的话原样返回
-  func erase(_ image: CGImage, mask: CGImage) throws -> CGImage {
+  func erase(_ image: CGImage, mask: CGImage, using choice: InpaintModel = .standard) throws
+    -> CGImage
+  {
     guard let box = Self.bounds(of: mask) else { return image }
     let crop = Self.cropRect(around: box, in: CGSize(width: image.width, height: image.height))
     guard let part = image.cropping(to: crop), let partMask = mask.cropping(to: crop) else {
       throw Failure.failed
     }
-    let model = try loadModel()
+    let model = try load(choice)
     let inputs = model.modelDescription.inputDescriptionsByName
     guard let imageShape = inputs["image"]?.imageConstraint,
       let maskShape = inputs["mask"]?.imageConstraint
     else { throw Failure.noModel }
+    let side = imageShape.pixelsWide
     let result = try model.prediction(
       from: MLDictionaryFeatureProvider(dictionary: [
         "image": try MLFeatureValue(
-          cgImage: Self.resized(part, gray: false), constraint: imageShape, options: nil),
+          cgImage: Self.resized(part, side: side, gray: false), constraint: imageShape,
+          options: nil),
         "mask": try MLFeatureValue(
-          cgImage: Self.resized(partMask, gray: true), constraint: maskShape, options: nil),
+          cgImage: Self.resized(partMask, side: side, gray: true), constraint: maskShape,
+          options: nil),
       ]))
     guard let buffer = result.featureValue(for: "output")?.imageBufferValue,
       let filled = Self.image(from: buffer)
@@ -69,22 +73,25 @@ actor Inpainter {
       x: crop.minX, y: CGFloat(image.height) - crop.maxY, width: crop.width, height: crop.height)
     context.clip(
       to: place,
-      mask: Self.feathered(partMask, radius: max(1.5, crop.width / CGFloat(Self.side) * 3)))
+      mask: Self.feathered(partMask, radius: max(1.5, crop.width / CGFloat(side) * 3)))
     context.interpolationQuality = .high
     context.draw(filled, in: place)
     guard let output = context.makeImage() else { throw Failure.failed }
     return output
   }
 
-  private func loadModel() throws -> MLModel {
-    if let model { return model }
-    guard LaMaModel.isInstalled else { throw Failure.noModel }
+  private func load(_ choice: InpaintModel) throws -> MLModel {
+    if let model = loaded[choice] { return model }
+    guard choice.isInstalled else { throw Failure.noModel }
     let configuration = MLModelConfiguration()
     configuration.computeUnits = .cpuAndGPU
-    let loaded = try MLModel(contentsOf: LaMaModel.installed, configuration: configuration)
-    model = loaded
-    return loaded
+    let model = try MLModel(contentsOf: choice.installed, configuration: configuration)
+    loaded[choice] = model
+    return model
   }
+
+  /// 设置里删了这个模型：丢掉加载好的那份
+  func forget(_ choice: InpaintModel) { loaded[choice] = nil }
 
   // MARK: 纯函数
 
@@ -135,8 +142,8 @@ actor Inpainter {
       blurred, from: input.extent, format: .L8, colorSpace: CGColorSpaceCreateDeviceGray()) ?? mask
   }
 
-  /// 拉成模型要的 800×800
-  private static func resized(_ image: CGImage, gray: Bool) -> CGImage {
+  /// 拉成模型要的边长见方
+  private static func resized(_ image: CGImage, side: Int, gray: Bool) -> CGImage {
     let context = CGContext(
       data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
       space: gray ? CGColorSpaceCreateDeviceGray() : CGColorSpace(name: CGColorSpace.sRGB)!,

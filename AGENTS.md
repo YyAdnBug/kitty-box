@@ -6,7 +6,7 @@
 
 **Kitty Box**：纯原生 macOS 文件工具箱，Kitty 家族的一员（结构照 Kitty Tools：`~/Desktop/yy/Codes/Tauri/kitty-tools-macos`，`macos` 分支）。基本自用，只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
-- **功能**（第一版）：打包（zip / 7z，忽略清单）、解压（GBK 文件名不乱码，带密码的 zip / 7z / RAR）、图片转换（ImageIO）、去水印（Gemini 角标、画笔擦除、视频台标）。
+- **功能**（第一版）：打包（zip / 7z，忽略清单）、解压（GBK 文件名不乱码，带密码的 zip / 7z / RAR）、图片转换（ImageIO）、视频转换、修图（去背景、AI 水印、画笔擦除、视频台标），有设置窗口（⌘,）。
 - **形态**：普通窗口 App（有程序坞图标，文件能拖上去），左边侧边栏列出工具（压缩 / 图片 / 去水印，品牌粉选中），右边是工具页（页头带操作和品牌粉主按钮 + 表格 + 右边一栏选项卡片 + 底下状态栏，照 Kitty Tools 设置窗），见 PLAN §2「界面」。
 - **方案**：`macos/PLAN.md` 是行为和做法的唯一来源；2026-10-30 拍板页 https://claude.ai/artifact/HtJqQ4iFqqpFnS1ZoZ5Gxw（31 项，「全部按推荐」），本地副本 `macos/build/research/plan-2026-10-30/decisions.html`（不入库）。
 - **进度**：分批做，一批一个提交，见 PLAN §5。
@@ -16,9 +16,9 @@
 ## 技术栈
 
 - Swift 6 语言模式，默认 `MainActor` 隔离 + approachable concurrency。
-- SwiftUI + AppKit；ImageIO、Core Image、Core ML、AVFoundation、QuickLook（空格快速查看）。
+- SwiftUI + AppKit；ImageIO、Core Image、Core ML、AVFoundation、QuickLook（空格快速查看）、Vision（去背景、找 AI 水印的字）。
 - 系统命令：`/usr/bin/tar`（zip 解压）。
-- 第三方：只有随包的 `7zz`（7-Zip 26.05，`fetch-vendor.sh` 按 SHA256 拉，不入库）；数据文件：Gemini α 图（随包）、LaMa 模型（不随包，画笔擦除第一次用时下载到 Application Support，`Watermark/LaMaModel.swift`）。
+- 第三方：只有随包的 `7zz`（7-Zip 26.05，`fetch-vendor.sh` 按 SHA256 拉，不入库）；数据文件：Gemini α 图（随包）、补图模型（快速 MI-GAN / 标准 LaMa / 高清 Big LaMa 2048，都不随包，用到时下载到 Application Support，`Watermark/InpaintModel.swift`）。
 - Xcode 27 工程，构建设置全在 xcconfig；`hdiutil` 打 DMG；Apple Development 签名（Team `HTX9F4KG39`），不公证。
 
 ## 目录结构

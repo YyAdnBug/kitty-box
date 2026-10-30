@@ -2,7 +2,7 @@
 // ⌘Z 一次退回一笔、⇧⌘Z 重做；满意了点页头「存储」，另存成「原名-去水印」，原图不动。
 // 画布能放大（捏合、⌘= / ⌘-，⌘0 回到适合窗口），放大后用触控板 / 滚轮挪；底下浮着一条控制栏：笔刷大小（[ ] 也能调）、撤销、
 // 对比（最早的原图和现在的，拖中间的线看）、缩放。涂的笔画存原图的像素坐标；笔刷大小按屏幕上看着的粗细，落笔时换算成原图像素。
-// 补图模型第一次用要先下载（LaMaModel，约 216 MB）：没下时页面顶上一条「下载」，下好之前不能涂。
+// 补图用设置 › 补图模型里选的那个（InpaintModel）；第一次用要先下载：没下时页面顶上一条「下载」「换一个模型」，下好之前不能涂。
 
 import AppKit
 import Observation
@@ -59,12 +59,12 @@ import UniformTypeIdentifiers
     }
   }
 
-  func erase() async {
+  func erase(using choice: InpaintModel = .standard) async {
     guard let image, !strokes.isEmpty, !busy else { return }
     state = .erasing
     do {
       let mask = Self.mask(strokes, width: image.width, height: image.height)
-      let result = try await Inpainter.shared.erase(image, mask: mask)
+      let result = try await Inpainter.shared.erase(image, mask: mask, using: choice)
       history.append(image)
       undone = []
       self.image = result
@@ -133,7 +133,8 @@ import UniformTypeIdentifiers
 
 struct EraseCanvas: View {
   @Bindable var model: EraseModel
-  @Bindable private var download = LaMaDownload.shared
+  @Bindable private var downloads = ModelDownloads.shared
+  @AppStorage(Prefs.inpaintModel) private var choice = InpaintModel.standard
   /// 笔刷在屏幕上的粗细（点）
   @State private var brush: CGFloat = 32
   @State private var drawing: EraseModel.Stroke?
@@ -155,8 +156,8 @@ struct EraseCanvas: View {
         .disabled(model.busy || model.history.isEmpty)
     } content: {
       VStack(spacing: 0) {
-        if download.state != .ready {
-          modelBanner.padding(.horizontal, 20).padding(.vertical, 12)
+        if downloads.state(of: choice) != .ready {
+          ModelBanner(choice: choice).padding(.horizontal, 20).padding(.vertical, 12)
           Hairline()
         }
         if model.source == nil {
@@ -211,7 +212,7 @@ struct EraseCanvas: View {
 
   /// 图 + 涂的笔画 + 笔刷圈，坐标是这张图在屏幕上的点（原图像素 × scale）
   private func paper(_ image: CGImage, scale: CGFloat) -> some View {
-    let painting = download.state == .ready && !model.busy
+    let painting = downloads.state(of: choice) == .ready && !model.busy
     return ZStack(alignment: .topLeading) {
       Image(decorative: image, scale: 1).resizable()
       // 笔画用普通的 Path 叠上去（不用 Canvas：屏外截图自检抓不到 Canvas，整页会画坏，2026-10-30 实测）
@@ -239,7 +240,7 @@ struct EraseCanvas: View {
         .onEnded { _ in
           if let drawing {
             model.strokes.append(drawing)
-            Task { await model.erase() }
+            Task { await model.erase(using: choice) }
           }
           drawing = nil
         }
@@ -334,36 +335,47 @@ struct EraseCanvas: View {
         ].compactMap(\.self).joined(separator: " · "))
     }
   }
+}
 
-  /// 模型还没下好时顶上的一条
-  @ViewBuilder private var modelBanner: some View {
-    switch download.state {
+/// 补图模型还没下好时页面顶上的一条（画笔擦除、AI 水印）：说要下哪个、多大，「下载」「换一个模型…」，下载中是进度条
+struct ModelBanner: View {
+  let choice: InpaintModel
+  /// 一句话说用它干什么（画笔擦除不用写）
+  var purpose: String?
+  @Bindable private var downloads = ModelDownloads.shared
+  @Environment(\.openSettings) private var openSettings
+
+  var body: some View {
+    switch downloads.state(of: choice) {
     case .ready:
       EmptyView()
     case .missing:
       HStack(spacing: 10) {
         Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
         Text(
-          "画笔擦除要用一个补图模型（约 \(LaMaModel.downloadSize.formatted(.byteCount(style: .file)))），第一次用先下载，之后不用联网。"
+          (purpose.map { $0 + "。" } ?? "")
+            + "要先下载补图模型「\(choice.title) · \(choice.name)」（约 \(choice.downloadSize.formatted(.byteCount(style: .file)))），之后不用联网。"
         )
         .font(.callout)
+        .fixedSize(horizontal: false, vertical: true)
         Spacer()
-        Button("下载") { Task { await download.start() } }.buttonStyle(BrandButtonStyle())
+        Button("换一个模型…") { openSettings() }
+        Button("下载") { Task { await downloads.start(choice) } }.buttonStyle(BrandButtonStyle())
       }
     case .downloading(let fraction):
       ProgressView(value: fraction) {
-        Text("正在下载补图模型 · \(Int((fraction * 100).rounded()))%（下完还要编译几秒）").font(.caption)
+        Text("正在下载补图模型「\(choice.title)」· \(Int((fraction * 100).rounded()))%（下完还要编译几秒）")
+          .font(.caption)
       }
     case .failed(let reason):
       HStack(spacing: 10) {
         Label(reason, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
           .font(.callout).lineLimit(2)
         Spacer()
-        Button("重试") { Task { await download.start() } }
+        Button("重试") { Task { await downloads.start(choice) } }
       }
     }
   }
-
 }
 
 /// 补的时候笔画一明一暗地闪（减弱动态效果时不闪）

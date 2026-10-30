@@ -51,7 +51,9 @@ import Observation
 
   /// 打开 App 10 秒后查一次（刚开机网络可能还没好；没查成也不提示）
   func start() {
-    guard isSupported else { return }
+    // 设置 › 通用「自动检查更新」关了就不查（没设过算开着）
+    guard isSupported, UserDefaults.standard.object(forKey: Prefs.autoCheckUpdates) as? Bool ?? true
+    else { return }
     Task {
       try? await Task.sleep(for: .seconds(10))
       if case .idle = state { await check() }

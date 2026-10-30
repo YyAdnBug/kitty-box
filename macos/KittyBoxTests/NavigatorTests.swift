@@ -37,10 +37,10 @@ final class NavigatorTests {
   }
 
   @Test func currentToolTakesWhatItCan() {
-    let navigator = make(on: .gemini)
+    let navigator = make(on: .aiMark)
     navigator.route([photo])
     #expect(navigator.pending.isEmpty)
-    #expect(navigator.gemini.items.map(\.source) == [photo])
+    #expect(navigator.aiMark.items.map(\.source) == [photo])
     // 打包什么都收，但从程序坞来的图片还是要问
     let packing = make(on: .pack)
     packing.route([photo])
@@ -79,7 +79,9 @@ final class NavigatorTests {
     #expect(navigator.accepts(.unpack, [photo, archive]))
     #expect(navigator.accepts(.convert, [photo, note]))
     #expect(!navigator.accepts(.convert, [note]))
-    #expect(navigator.accepts(.gemini, [photo]))
+    #expect(navigator.accepts(.aiMark, [photo]))
+    #expect(navigator.accepts(.cutout, [photo]))
+    #expect(!navigator.accepts(.cutout, [movie]))
     #expect(navigator.accepts(.erase, [photo]))
     #expect(navigator.accepts(.video, [movie]))
     #expect(navigator.accepts(.videoConvert, [movie]))

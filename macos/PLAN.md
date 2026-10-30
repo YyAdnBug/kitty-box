@@ -79,6 +79,14 @@
 - 2026-10-30 实测：JPEG 自己会把透明处垫成白色；ICO 只收边长 ≤ 256 的正方形、ICNS 只收标准尺寸的正方形，所以这两种先等比放进透明的正方形画布，出几种尺寸（ICO 16/32/48/256，ICNS 16–1024）；PDF 能写不能读。
 - 不支持 WebP 输出（系统不能写 WebP）。
 
+### 视频转换（M6）
+- 新工具，侧边栏「转换」组（原来的「图片」组改名，图片转换和它一组）。一批视频，一个一个转（视频编码器就那么几路，一起转不见得快），每个有进度，页头「停止」取消正在转的、没开始的留着。
+- 转成：MP4（H.264，哪里都能放）、MP4（HEVC，小一半左右）、动图 GIF、只要声音（M4A）。MP4 / M4A 用系统的导出会话（最高质量预设 / Apple M4A），声音一起转；没有声音的视频转 M4A 说一声。
+- 尺寸（只 MP4）：原尺寸 / 1080p / 720p / 480p，按短边算（横屏 720p 就是高 720，竖屏是宽 720），只缩不放，宽高取偶数；要缩时加一个视频合成按比例缩每一帧。
+- GIF：每秒 10 帧、长边最多 480、最多取前 15 秒，一直循环（`ponytail:` GIF 没有帧间压缩，再长再大就上百 MB；要更长换 MP4）。
+- 结果放在原视频旁边、换扩展名，重名加「 2」。表格列时长、尺寸（转正之后）、大小、转换后的大小和差多少；小图取视频第一帧。
+- 一批文件的列表模型 `FileBatch`（原来叫 ImageBatch）：收什么由页面给（图片 / 视频），几个一起做，每个能报进度，`start` 开始的能 `stop`。
+
 ### Gemini 角标
 - 把反向 alpha 混合算法移植成 Swift（`Watermark/GeminiMark.swift`）：`原图 = (水印图 − α·255) / (1 − α)`。α 用上游内嵌的原始数据；α 先减 3/255 的噪底、剩下不到 0.002 的不动，α 上限 0.99（同上游 blendModes.js）。
 - 候选（星标边长 / 右下边距 / α 图），取自上游的 Gemini 尺寸表：48/32/48、96/64/96、96/192/96-20260520、48/96/48、36/96/36-v2、48/89/48（2752×1536）、46/32/96 双线性缩放（1408×768）。
@@ -142,8 +150,9 @@
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyBoxApp.swift`（`@main`，主窗口）、`Services.swift`（访达「服务」菜单的四项，M5）、`AppDelegate.swift`（启动时登记服务；`application(_:open:)`：拖到程序坞图标上、「打开方式」选了本 App 的文件交给 Navigator；能收哪些写在 `Config/Info.plist` 的 `CFBundleDocumentTypes`：压缩包 Alternate，其余 None） |
-| `Shell/` | `MainView.swift`（主窗口：侧边栏 + 工具页，`Tool` 六个工具和分组，侧边栏自己画的品牌粉选中，「添加文件…」弹选文件、收到文件问交给谁）、`ToolPage.swift`（工具页的骨架：页头、右边选项栏和选项卡片、状态栏，空着时的拖放区、整页收拖放的描边）、`Paste.swift`（⌘V：剪贴板里的文件或图片数据交给 Navigator）、`FileThumb.swift`（缩略图和表格里的种类、大小、尺寸、转换后差多少）、`ResultLine.swift`（做完 / 没做成的那一行字）、`Navigator.swift`（选中哪个工具 + 收进来的文件往哪送，见 §2「界面」；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`FileBatch.swift`（一批图一张一张处理的列表模型和一行的样子：图片转换和 Gemini 角标共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度：品牌粉、奶油底、选中色、发丝线、品牌粉主按钮，加四类工具的家族色和画布上浮着的控制栏）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
+| `Shell/` | `MainView.swift`（主窗口：侧边栏 + 工具页，`Tool` 六个工具和分组，侧边栏自己画的品牌粉选中，「添加文件…」弹选文件、收到文件问交给谁）、`ToolPage.swift`（工具页的骨架：页头、右边选项栏和选项卡片、状态栏，空着时的拖放区、整页收拖放的描边）、`Paste.swift`（⌘V：剪贴板里的文件或图片数据交给 Navigator）、`FileThumb.swift`（缩略图和表格里的种类、大小、尺寸、转换后差多少）、`ResultLine.swift`（做完 / 没做成的那一行字）、`Navigator.swift`（选中哪个工具 + 收进来的文件往哪送，见 §2「界面」；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`FileBatch.swift`（一批文件交给同一件事的列表模型和一行的样子：图片转换、Gemini 角标、视频转换共用）、`SpacePreview.swift`（空格快速查看）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度：品牌粉、奶油底、选中色、发丝线、品牌粉主按钮，加四类工具的家族色和画布上浮着的控制栏）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
 | `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、解完的清理和挪位置）、`PackView.swift`（打包页和它的 PackModel）、`UnpackView.swift`（解压页和它的 UnpackModel：一个接一个解、就地问密码） |
+| `VideoConvert/` | `VideoConverter.swift`（MP4 / HEVC / GIF / M4A，缩到 1080p–480p）、`VideoConvertView.swift`（视频转换页） |
 | `ImageConvert/` | `ImageConverter.swift`（ImageIO 读写、转正方向、图标格式）、`ConvertView.swift`（转换页和它的 ConvertModel） |
 | `Watermark/` | `GeminiMark.swift`（找星标、反解、另存）、`VideoDelogo.swift`（第一帧、补像素、导出）、`Inpainter.swift`（LaMa：裁、补、羽化贴回）、`EraseCanvas.swift`（画笔擦除：一笔一擦、撤销、缩放、对比、存储）、`GeminiView.swift`（Gemini 角标页：一批图 + 预览对比）、`VideoMarkView.swift`（视频台标：第一帧上拖框、导出）、`CompareSlider.swift`（前后对比：拖中间的线） |
 | `Resources/` | `Assets.xcassets`（小猫图标）、`gemini-alpha-*.bin`、`7zz-LICENSE.txt`、`gemini-watermark-LICENSE.txt`；`changelog.json` 第一次发版时加 |
@@ -165,7 +174,8 @@
 - `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带（zip 的条目都标了加密）、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走、打 160 MB 的包边打边报进度、报了之后停下不留半个包、压缩级别（存储比原文大、最小压到二十分之一以下）；外加名字、分卷、7zz 进度解析的纯函数；
 - `ImageConverterTests`：10 种格式各转一遍（类型、尺寸、JPEG 透明处是白的、图标是正方形）、拍摄信息带过去和转正方向、动图留着每一帧、能读什么、缩到长边上限（小图不放大）、去掉定位只去 GPS；
 - `NavigatorTests`：收进来的文件往哪送（当前工具收得了给它、有图片视频就问、别的打包；拖进工具页先给当前工具）、哪些工具能收、记住上次选的工具（临时偏好域）、「服务」菜单交给指明的工具；
-- `FileBatchTests`：8 张一起做：全做完、失败的那张对得上，同时在做的不止一张、不超过 4 张；
+- `FileBatchTests`：8 张一起做：全做完、失败的那张对得上，同时在做的不止一张、不超过 4 张；一个一个做时停下：正在做的写「已停止」、没开始的留着；只收 accepts 认的；
+- `VideoConverterTests`：转 H.264 的 MP4、1280×720 缩到 480p 是 854×480、GIF 有一串帧且循环、只要声音出 M4A（没声音的说一声、不留文件）；缩小尺寸的纯函数；
 - `PasteTests`：剪贴板里的文件原样交出去、只有图片数据时按原格式存成文件（重名不覆盖）、只有文字时什么都不交、粘贴到工具页交给这个工具；用自己起名的剪贴板，不碰用户的；
 - `UpdaterTests`：latest release 的 JSON 怎么认、版本号按数字比；
 - `SnapshotProbeTests`：截图自检（照 Kitty Tools）：关于窗口屏外画成 PNG；主窗口（侧边栏、页头、右边的选项）屏外画不出来，开一扇真窗口（`NSHostingView` 桥接工具栏，按 key 窗口画），先截一张空着的打包页，再带着示例数据一个工具停 3.5 秒，窗口编号写进 `live-<工具>.txt` 由外面 `screencapture -l` 截；模型下载过的话在系统壁纸上真擦一处存 `erase-result.png`、再截一张对比；偏好用临时域；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
@@ -200,7 +210,7 @@
   6. 一件事做完时 App 在后台，程序坞图标跳一下；
   7. 画笔擦除能重做（⌘⇧Z）；
   8. 访达「服务」菜单（右键 › 服务）：用 Kitty Box 打包、解压、转换图片、去 Gemini 角标（「Finder 右键菜单」第一版不做，服务菜单不用另写扩展）。
-- **M6 看得清、能转视频**（2026-10-30 用户说「开始」，照 M5 结尾提的几样做）：
+- **M6 看得清、能转视频**（2026-10-30 做完，共 71 个单测；用户说「开始」，照 M5 结尾提的几样做）：
   1. 前后对比能放大到 1:1（捏合、按钮：适合 / 1:1 / 放大缩小），预览按原图分辨率解（去掉「长边 2400」的 ponytail）；
   2. 表格和列表里选中一行按空格快速查看（系统的快速查看面板，←→ 换一个），右键菜单也有；白名单加 QuickLook；
   3. 解压：每个包能「看看里面」：列出里面的文件、大小、一共多少（zip 用自己读的中央目录，别的用 7zz l）；
@@ -208,7 +218,7 @@
 
 ## 6. 第一版不做
 
-Windows 版（见 §8）、专给中文 Windows 写 GBK 文件名的 zip（等 M1 真机结果）、WebP 输出、tar.gz 打包、RAR 压缩（没有免费工具能做）、Finder 扩展（右键菜单用「服务」代替，M5）、PDF / 音视频转换、Gemini 的降噪和残影修补。
+Windows 版（见 §8）、专给中文 Windows 写 GBK 文件名的 zip（等 M1 真机结果）、WebP 输出、tar.gz 打包、RAR 压缩（没有免费工具能做）、Finder 扩展（右键菜单用「服务」代替，M5）、PDF 转换、Gemini 的降噪和残影修补。
 
 ## 7. 风险
 

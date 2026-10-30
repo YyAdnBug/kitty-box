@@ -46,17 +46,14 @@ struct PasteTests {
     #expect(Paste.files(from: pasteboard, savingTo: folder).isEmpty)
   }
 
-  @Test func pasteGoesToTheOpenTool() {
+  @Test func pasteGoesToTheOpenTool() throws {
     let photo = URL(filePath: "/tmp/kittybox-nav/IMG_0001.heic")
-    let navigator = Navigator()
-    navigator.path = [.convert]
-    navigator.paste([photo])
-    #expect(navigator.path == [.convert])
+    let suite = "kittybox-test-\(UUID())"
+    defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let navigator = Navigator(defaults: try #require(UserDefaults(suiteName: suite)))
+    navigator.tool = .convert
+    navigator.give([photo])
+    #expect(navigator.tool == .convert)
     #expect(navigator.convert.items.map(\.source) == [photo])
-
-    // 在首页：照拖进来的分派（有图片就等你点一格）
-    let home = Navigator()
-    home.paste([photo])
-    #expect(home.pending == [photo])
   }
 }

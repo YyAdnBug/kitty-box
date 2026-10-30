@@ -1,5 +1,6 @@
-// 解压页（B7–B9）：拖进压缩包就一个接一个解，解到包旁边。有密码的停下来就地问（不记），密码不对说一声再问。
-// 拖到程序坞图标上、⌘V 粘贴的压缩包也进这里（Navigator），直接开始。空着时整页是拖放区。
+// 解压页（B7–B9）：拖进压缩包就一个接一个解，解到包旁边。有密码的停下来弹框问（不记），密码不对说一声再问；
+// 点了「跳过」那一行留着「输入密码…」。拖到程序坞图标上、⌘V 粘贴的压缩包也进这里（Navigator），直接开始。
+// 表格：压缩包、大小、状态；右键在访达中显示 / 重试 / 移除，⌫ 移除。空着时整页是拖放区。
 
 import AppKit
 import Observation
@@ -21,6 +22,16 @@ import UniformTypeIdentifiers
     let archive: URL
     var state = State.waiting
     var password = ""
+
+    /// 解完了或没解成（不会再自己动）
+    var isFinished: Bool {
+      switch state {
+      case .done, .failed: true
+      default: false
+      }
+    }
+
+    var result: URL? { if case .done(let url) = state { url } else { nil } }
   }
 
   var jobs: [Job] = []
@@ -39,12 +50,21 @@ import UniformTypeIdentifiers
   }
 
   func clearFinished() {
-    jobs.removeAll {
-      switch $0.state {
-      case .done, .failed: true
-      default: false
-      }
+    jobs.removeAll(where: \.isFinished)
+  }
+
+  /// 移除选中的（正在解的不移）
+  func remove(_ ids: Set<Job.ID>) {
+    jobs.removeAll { job in
+      guard ids.contains(job.id) else { return false }
+      if case .running = job.state { return false }
+      return true
     }
+  }
+
+  /// 第一个等着输密码的（弹框问它）
+  var askingID: Job.ID? {
+    jobs.first { if case .needsPassword = $0.state { true } else { false } }?.id
   }
 
   /// 一个接一个解（同时解好几个大包只会互相抢磁盘）
@@ -76,64 +96,121 @@ import UniformTypeIdentifiers
 
 struct UnpackView: View {
   @Bindable var model: UnpackModel
-  @State private var choosing = false
+  @State private var selection = Set<UnpackModel.Job.ID>()
+  /// 正在弹框问密码的那一个
+  @State private var asking: UnpackModel.Job.ID?
 
   var body: some View {
     VStack(spacing: 0) {
       if model.jobs.isEmpty {
         DropZone(
-          symbol: Tool.unpack.symbol, color: Tool.unpack.color, title: "拖入压缩包",
-          detail: "zip、7z、RAR、tar、iso 等都行，解到它旁边；有密码的会停下来问"
-        ) { choosing = true }
+          tool: .unpack, title: "拖入压缩包",
+          detail: "zip、7z、RAR、tar、iso 等都行，解到它旁边；Windows 打的中文名不乱码")
       } else {
-        List($model.jobs) { $job in
-          JobRow(job: $job) { model.retry(job.id) }
-        }
-        .listStyle(.inset)
+        table
       }
-      HStack(spacing: 12) {
+      StatusBar {
+        Text(summary)
+      } trailing: {
         // verbatim：不然 __MACOSX 的下划线会被当成 Markdown 的斜体
-        Text(verbatim: "__MACOSX、._ 开头的杂文件不解出来。")
-          .font(.caption).foregroundStyle(.secondary)
-        Spacer()
-        if !model.jobs.isEmpty {
-          Button("清掉做完的") { model.clearFinished() }
-          Button("添加…") { choosing = true }
+        Text(verbatim: "__MACOSX、._ 开头的杂文件不解出来")
+      }
+    }
+    .navigationTitle("解压")
+    .toolbar {
+      ToolbarItemGroup {
+        Button("添加文件", systemImage: "plus") { Navigator.shared.importing = true }
+          .help("添加压缩包（⌘O）")
+        Button("清掉做完的", systemImage: "checklist.checked") { model.clearFinished() }
+          .help("清掉解完的和没解成的")
+          .disabled(!model.jobs.contains(where: \.isFinished))
+      }
+    }
+    .onAppear { asking = model.askingID }
+    .onChange(of: model.askingID) { asking = $1 }
+    .alert(
+      "「\(job(asking)?.archive.lastPathComponent ?? "")」有密码", isPresented: askingBinding
+    ) {
+      SecureField("密码", text: passwordBinding)
+      Button("解压") { if let asking { model.retry(asking) } }
+      Button("跳过", role: .cancel) {}
+    } message: {
+      if case .needsPassword(again: true) = job(asking)?.state {
+        Text("密码不对，再试一次。")
+      } else {
+        Text("输入密码接着解；密码不会被记下来。")
+      }
+    }
+  }
+
+  private var table: some View {
+    Table(model.jobs, selection: $selection) {
+      TableColumn("压缩包") { job in
+        HStack(spacing: 8) {
+          FileThumb(url: job.archive, size: 18)
+          Text(job.archive.lastPathComponent).lineLimit(1).truncationMode(.middle)
         }
       }
-      .bottomBar()
+      .width(min: 160, ideal: 240)
+      TableColumn("大小") { FileSizeText(url: $0.archive).foregroundStyle(.secondary) }
+        .width(min: 60, ideal: 80)
+      TableColumn("状态") { job in
+        JobStatus(job: job) { asking = job.id }
+      }
+      .width(min: 240, ideal: 420)
     }
-    .frame(minWidth: 600, minHeight: 360)
-    .navigationTitle("解压")
-    .fileDrop(Tool.unpack.color) { model.add($0) }
-    .fileImporter(
-      isPresented: $choosing, allowedContentTypes: [.item], allowsMultipleSelection: true
-    ) {
-      if case .success(let urls) = $0 { model.add(urls) }
+    .contextMenu(forSelectionType: UnpackModel.Job.ID.self) { ids in
+      Button("在访达中显示") {
+        let urls = ids.compactMap { id in job(id).map { $0.result ?? $0.archive } }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+      }
+      if ids.contains(where: { job($0)?.isFinished == true && job($0)?.result == nil }) {
+        Button("重试") { for id in ids { model.retry(id) } }
+      }
+      Divider()
+      Button("移除") { model.remove(ids) }
+    } primaryAction: { ids in
+      for id in ids { if let url = job(id)?.result { NSWorkspace.shared.open(url) } }
     }
+    .tableStyle(.inset(alternatesRowBackgrounds: false))
+    .onDeleteCommand { model.remove(selection) }
+  }
+
+  private var summary: String {
+    if model.jobs.isEmpty { return "还没有压缩包" }
+    let done = model.jobs.count { $0.result != nil }
+    let locked = model.jobs.count { if case .needsPassword = $0.state { true } else { false } }
+    return "\(model.jobs.count) 个压缩包 · 已解压 \(done)" + (locked > 0 ? " · \(locked) 个要密码" : "")
+  }
+
+  private func job(_ id: UnpackModel.Job.ID?) -> UnpackModel.Job? {
+    model.jobs.first { $0.id == id }
+  }
+
+  private var askingBinding: Binding<Bool> {
+    Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })
+  }
+
+  private var passwordBinding: Binding<String> {
+    Binding(
+      get: { job(asking)?.password ?? "" },
+      set: { text in
+        if let index = model.jobs.firstIndex(where: { $0.id == asking }) {
+          model.jobs[index].password = text
+        }
+      })
   }
 }
 
-private struct JobRow: View {
-  @Binding var job: UnpackModel.Job
-  let retry: () -> Void
+/// 表格「状态」那一格
+private struct JobStatus: View {
+  let job: UnpackModel.Job
+  let askPassword: () -> Void
 
   var body: some View {
-    HStack(spacing: 10) {
-      FileThumb(url: job.archive)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(job.archive.lastPathComponent).lineLimit(1).truncationMode(.middle)
-        status.font(.system(size: 11))
-      }
-      Spacer()
-    }
-    .padding(.vertical, 4)
-  }
-
-  @ViewBuilder private var status: some View {
     switch job.state {
     case .waiting:
-      Text("等着").foregroundStyle(.secondary)
+      Label("等待中", systemImage: "clock").foregroundStyle(.secondary)
     case .running:
       HStack(spacing: 6) {
         ProgressView().controlSize(.mini)
@@ -143,13 +220,10 @@ private struct JobRow: View {
       DoneLine(text: "解到「\(url.lastPathComponent)」", url: url)
     case .needsPassword(let again):
       HStack(spacing: 8) {
-        Text(again ? "密码不对，再试一次：" : "这个包有密码：")
+        Label(again ? "密码不对" : "要密码", systemImage: "lock.fill")
           .foregroundStyle(again ? .red : .secondary)
-        SecureField("密码", text: $job.password).textFieldStyle(.roundedBorder)
-          .frame(width: 180).onSubmit(retry)
-        Button("解压", action: retry).disabled(job.password.isEmpty)
+        Button("输入密码…", action: askPassword).buttonStyle(.link)
       }
-      .controlSize(.small)
     case .failed(let reason):
       FailLine(reason: reason)
     }

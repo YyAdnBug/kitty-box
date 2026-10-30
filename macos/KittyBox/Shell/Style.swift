@@ -100,7 +100,7 @@ enum Style {
     return reduceTransparency
   }
 
-  /// 四个工具的家族色：首页色块、工具页头共用
+  /// 四类工具的家族色：侧边栏色块、拖放区、拖着经过时的描边共用（去水印的三项同一个色）
   enum Family {
     static let pack = Color(nsColor: .systemOrange)
     static let unpack = Color(nsColor: .systemGreen)
@@ -184,4 +184,19 @@ struct CardSurface: ViewModifier {
 extension View {
   /// 内容卡片表面，见 `CardSurface`
   func cardSurface() -> some View { modifier(CardSurface()) }
+}
+
+extension View {
+  /// 画布上浮着的一条控制栏（画笔擦除、视频台标）：胶囊形，26 起是玻璃，15 是厚材质 + 发丝线 + 阴影
+  @ViewBuilder func floatingBar() -> some View {
+    let padded = padding(.horizontal, 14).padding(.vertical, 8)
+    if #available(macOS 26, *) {
+      padded.glassEffect(.regular, in: Capsule())
+    } else {
+      padded
+        .background(.regularMaterial, in: Capsule())
+        .overlay { Capsule().hairlineBorder() }
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+    }
+  }
 }

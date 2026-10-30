@@ -17,6 +17,9 @@ import SwiftUI
     let id = UUID()
     let source: URL
     var state = State.waiting
+
+    /// 做好了的结果文件
+    var result: URL? { if case .done(let url) = state { url } else { nil } }
   }
 
   var items: [Item] = []
@@ -32,6 +35,15 @@ import SwiftUI
   }
 
   func remove(_ id: Item.ID) { items.removeAll { $0.id == id } }
+
+  /// 移除选中的（正在做的不移）
+  func remove(_ ids: Set<Item.ID>) {
+    items.removeAll { item in
+      guard ids.contains(item.id) else { return false }
+      if case .running = item.state { return false }
+      return true
+    }
+  }
 
   func clearFinished() {
     items.removeAll { if case .done = $0.state { true } else { false } }

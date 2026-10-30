@@ -1,23 +1,21 @@
-// 收文件的两件共用的东西：工具页空着时铺满的拖放区（DropZone），和整页收拖放、拖着经过时描一圈家族色（fileDrop）。
-// 拖放区写明三种进来的路：拖进来、⌘V 粘贴（Paste）、选择文件。
+// 工具页共用的三件：空着时铺满的拖放区（DropZone）、整页收拖放时描一圈家族色（fileDrop）、底下的状态栏（StatusBar，同访达窗口底边）。
+// 拖放区写明三种进来的路：添加文件（⌘O）、拖进来、⌘V 粘贴（Paste）。
 
 import SwiftUI
 
-/// 空着时铺满页面的拖放区：家族色的圆底符号 + 标题 + 一句说明 +「选择文件…」和 ⌘V 提示
+/// 空着时铺满页面的拖放区：家族色的圆底符号 + 标题 + 一句说明 +「添加文件…」和 ⌘V 提示
 struct DropZone: View {
-  let symbol: String
-  let color: Color
+  let tool: Tool
   let title: String
   let detail: String
-  let choose: () -> Void
 
   var body: some View {
     VStack(spacing: 16) {
-      Image(systemName: symbol)
+      Image(systemName: tool.symbol)
         .font(.system(size: 30, weight: .medium))
-        .foregroundStyle(color)
+        .foregroundStyle(tool.color)
         .frame(width: 76, height: 76)
-        .background(color.opacity(0.12), in: Circle())
+        .background(tool.color.opacity(0.12), in: Circle())
       VStack(spacing: 6) {
         Text(title).font(.system(size: 15, weight: .semibold))
         Text(detail)
@@ -26,8 +24,8 @@ struct DropZone: View {
           .multilineTextAlignment(.center)
       }
       HStack(spacing: 10) {
-        Button("选择文件…", action: choose).controlSize(.large)
-        Text("或按 ⌘V 粘贴").font(.system(size: 12)).foregroundStyle(.secondary)
+        Button("添加文件…") { Navigator.shared.importing = true }.controlSize(.large)
+        Text("或拖进来、按 ⌘V 粘贴").font(.system(size: 12)).foregroundStyle(.secondary)
       }
     }
     .padding(24)
@@ -40,19 +38,38 @@ struct DropZone: View {
   }
 }
 
+/// 工具页底下的状态栏：左边一句状态（数了几个、做到哪了、结果），右边进度或一两个小按钮；28 pt 高、11 pt 字、顶上一条分隔线
+struct StatusBar<Leading: View, Trailing: View>: View {
+  @ViewBuilder var leading: Leading
+  @ViewBuilder var trailing: Trailing
+
+  var body: some View {
+    HStack(spacing: 10) {
+      leading.lineLimit(1)
+      Spacer(minLength: 8)
+      trailing
+    }
+    .font(.system(size: 11))
+    .foregroundStyle(.secondary)
+    .controlSize(.small)
+    .padding(.horizontal, 12)
+    .frame(height: 28)
+    .frame(maxWidth: .infinity)
+    .background(.bar)
+    .overlay(alignment: .top) { Divider() }
+  }
+}
+
+extension StatusBar where Trailing == EmptyView {
+  init(@ViewBuilder leading: () -> Leading) {
+    self.init(leading: leading, trailing: { EmptyView() })
+  }
+}
+
 extension View {
   /// 整页收拖放：拖着经过时整页描一圈家族色、垫一层淡底
   func fileDrop(_ color: Color, perform: @escaping ([URL]) -> Void) -> some View {
     modifier(FileDrop(color: color, perform: perform))
-  }
-
-  /// 页面底部的操作栏：工具栏材质、顶上一条分隔线
-  func bottomBar() -> some View {
-    padding(.horizontal, 16)
-      .padding(.vertical, 10)
-      .frame(maxWidth: .infinity)
-      .background(.bar)
-      .overlay(alignment: .top) { Divider() }
   }
 }
 

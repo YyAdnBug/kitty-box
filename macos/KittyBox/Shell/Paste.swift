@@ -1,4 +1,5 @@
-// ⌘V 粘贴文件：Edit 菜单的「粘贴」换成自己的（KittyBoxApp），输入框里照常粘贴文字；别处把剪贴板里的东西交给 Navigator——
+// ⌘V 粘贴文件：Edit 菜单的「粘贴」换成自己的（KittyBoxApp），输入框里照常粘贴文字；别处把剪贴板里的东西交给当前工具
+// （Navigator.give，收不了再分派）——
 // 访达里拷贝的文件原样交出去；只有图片数据（截图到剪贴板、浏览器里「拷贝图像」）时，原样存成「下载」里的
 // 「粘贴的图片 日期 时间」再交出去，处理的结果就放在它旁边（同拖进来的文件）。
 
@@ -14,7 +15,7 @@ enum Paste {
     }
     let urls = files(from: .general)
     guard !urls.isEmpty else { return NSSound.beep() }
-    Navigator.shared.paste(urls)
+    Navigator.shared.give(urls)
   }
 
   /// 剪贴板里的文件；没有文件、只有图片数据时存成 folder 里的一个文件。什么都没有（或存不下）是空的

@@ -1,5 +1,7 @@
-// 界面截图自检（照 Kitty Tools 的 SnapshotProbeTests）：把各工具页带着示例数据画在屏幕外的窗口里，存成 PNG 看一眼；
-// 画笔擦除页例外（屏外抓不到，见下面），会在屏幕左下角开一扇窗停 8 秒，不当 key、不抢键盘。只读偏好，不写。平时跳过，要看时：
+// 界面截图自检（照 Kitty Tools 的 SnapshotProbeTests）：关于窗口画在屏幕外存成 PNG；主窗口（侧边栏、工具栏、右边的选项）屏外画不出来，
+// 开一扇真窗口（在屏幕左下角，不当 key、不抢键盘），带着示例数据一个工具停 3.5 秒，每到一个工具把窗口编号写进
+// live-<工具>.txt，由外面用 screencapture -l <编号> 截。画笔擦除模型下载过的话，再在系统壁纸上真擦一处存 erase-result.png、
+// 截一张对比（live-erase-compare）。偏好用临时域，不写用户的。平时跳过，要看时：
 // TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-box-shots xcodebuild -project macos/KittyBox.xcodeproj -scheme KittyBox \
 //   test -only-testing:KittyBoxTests/SnapshotProbeTests
 
@@ -19,101 +21,90 @@ struct SnapshotProbeTests {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let samples = FileManager.default.temporaryDirectory.appending(path: "kittybox-shots-\(UUID())")
     defer { try? FileManager.default.removeItem(at: samples) }
-    for name in ["猫咪相册/封面.heic", "猫咪相册/.DS_Store", "猫咪相册/文档/真的要删吗?.txt", "猫咪相册/网站/debug.log"] {
+    for name in [
+      "猫咪相册/封面.heic", "猫咪相册/.DS_Store", "猫咪相册/文档/真的要删吗?.txt", "猫咪相册/网站/debug.log", "周报.txt",
+      "报告.zip", "资源.7z", "旧照片.rar",
+    ] {
       let url = samples.appending(path: name)
       try FileManager.default.createDirectory(
         at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try Data("x".utf8).write(to: url)
+      try Data(repeating: 7, count: 180_000).write(to: url)
     }
-
-    try await shoot(AboutView(), "about", height: 560)
-
-    let convert = ImageBatch()
-    convert.items = [
-      .init(
-        source: samples.appending(path: "IMG_0001.HEIC"),
-        state: .done(samples.appending(path: "IMG_0001.jpg"))),
-      .init(source: samples.appending(path: "IMG_0002.HEIC"), state: .running),
-      .init(source: samples.appending(path: "截图 2026-10-30.png"), state: .waiting),
-      .init(source: samples.appending(path: "坏的.webp"), state: .failed("读不出这张图。")),
-    ]
-    try await shoot(ConvertView(model: convert), "convert")
-
-    let pack = PackModel()
-    pack.add([samples.appending(path: "猫咪相册")])
-    pack.plan = await Archiver.plan(pack.items, rules: pack.ignore.rules)
-    try await shoot(PackView(model: pack), "pack", height: 760)
-
-    let unpack = UnpackModel()
-    unpack.jobs = [
-      .init(
-        archive: samples.appending(path: "报告.zip"), state: .done(samples.appending(path: "报告"))),
-      .init(archive: samples.appending(path: "资源.7z"), state: .needsPassword(again: true)),
-    ]
-    try await shoot(UnpackView(model: unpack), "unpack")
-
-    try await shoot(ConvertView(model: ImageBatch()), "convert-empty")
-
-    // Gemini 那一行做好了：右边是前后对比，要真的两张图（渐变底，一张右下角盖个白圆当星标）
     for (name, marked) in [
+      ("IMG_0001.png", false), ("IMG_0002.png", false), ("截图 2026-10-30.png", false),
       ("Gemini_Generated_Image_1.png", true), ("Gemini_Generated_Image_1-去水印.png", false),
     ] {
       try writeSample(samples.appending(path: name), marked: marked)
     }
-    let watermark = WatermarkModel()
-    watermark.gemini.items = [
+
+    try await shoot(AboutView(), "about", height: 560)
+
+    let suite = "kittybox-test-\(UUID())"
+    defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let navigator = Navigator(defaults: try #require(UserDefaults(suiteName: suite)))
+
+    navigator.pack.add([samples.appending(path: "猫咪相册"), samples.appending(path: "周报.txt")])
+    navigator.pack.plan = await Archiver.plan(
+      navigator.pack.items, rules: navigator.pack.ignore.rules)
+
+    navigator.unpack.jobs = [
+      .init(
+        archive: samples.appending(path: "报告.zip"), state: .done(samples.appending(path: "报告"))),
+      .init(archive: samples.appending(path: "旧照片.rar"), state: .running),
+      .init(archive: samples.appending(path: "资源.7z"), state: .needsPassword(again: false)),
+    ]
+
+    let converted = try await ImageConverter.convert(
+      samples.appending(path: "IMG_0001.png"), to: .jpeg, quality: 0.85)
+    navigator.convert.items = [
+      .init(source: samples.appending(path: "IMG_0001.png"), state: .done(converted)),
+      .init(source: samples.appending(path: "IMG_0002.png"), state: .running),
+      .init(source: samples.appending(path: "截图 2026-10-30.png"), state: .waiting),
+      .init(source: samples.appending(path: "坏的.webp"), state: .failed("读不出这张图。")),
+    ]
+
+    navigator.gemini.items = [
       .init(
         source: samples.appending(path: "Gemini_Generated_Image_1.png"),
         state: .done(samples.appending(path: "Gemini_Generated_Image_1-去水印.png"))),
-      .init(source: samples.appending(path: "截图.png"), state: .failed("没认出 Gemini 角标。")),
+      .init(
+        source: samples.appending(path: "截图 2026-10-30.png"), state: .failed("没认出 Gemini 角标。")),
     ]
-    try await shoot(WatermarkView(model: watermark), "watermark-gemini")
 
-    // 真窗口的工具栏（返回按钮、去水印的模式切换）屏外画不出来：让 App 的主窗口进去水印页停 8 秒，
-    // 窗口编号写进 main-window.txt，由外面用 screencapture -l 截
-    Navigator.shared.watermark.gemini.items = watermark.gemini.items
-    Navigator.shared.path = [.watermark]
-    try await Task.sleep(for: .seconds(1))
-    if let main = NSApp.windows.first(where: { $0.isVisible && $0.title == "去水印" }) {
-      try "\(main.windowNumber)".write(
-        to: folder.appending(path: "main-window.txt"), atomically: true, encoding: .utf8)
-      try await Task.sleep(for: .seconds(8))
-    }
-    Navigator.shared.path = []
-
+    // 画笔擦除：系统自带的壁纸，涂一笔（还没擦）
+    let photo = URL(filePath: "/System/Library/Desktop Pictures/Sonoma.heic")
+    navigator.erase.load(photo)
     let movie = samples.appending(path: "录屏.mov")
     try await makeTestVideo(at: movie)
-    watermark.video.load(movie)
-    watermark.mode = .video
-    try await Task.sleep(for: .seconds(1))
-    watermark.video.rects = [CGRect(x: 118, y: 6, width: 34, height: 20)]
-    try await shoot(WatermarkView(model: watermark), "watermark-video", height: 560)
-
-    // 画笔擦除：系统自带的壁纸，涂两笔；再用同一条路（裁、缩、补、贴回）真的擦一处，存成 PNG 看接缝（模型下载过才擦）
-    let photo = URL(filePath: "/System/Library/Desktop Pictures/Sonoma.heic")
-    watermark.mode = .erase
-    watermark.erase.load(photo)
+    navigator.video.load(movie)
     try await Task.sleep(for: .seconds(2))
-    let image = try #require(watermark.erase.image)
+    let image = try #require(navigator.erase.image)
     let (cx, cy) = (CGFloat(image.width) * 0.55, CGFloat(image.height) * 0.62)
-    watermark.erase.strokes = [
+    navigator.erase.strokes = [
       .init(points: [CGPoint(x: cx - 300, y: cy), CGPoint(x: cx + 300, y: cy)], width: 160)
     ]
-    // 画笔擦除页屏外截图抓不到（整页发黑，2026-10-30 实测；放进真窗口一切正常）：放进一个真的屏幕窗口停 8 秒，
-    // 窗口编号写进 erase-window.txt，由外面用 screencapture -l <编号> 截
-    let live = NSWindow(
-      contentRect: NSRect(x: 80, y: 80, width: 720, height: 560), styleMask: [.titled],
+    navigator.video.rects = [CGRect(x: 118, y: 6, width: 34, height: 20)]
+
+    let window = NSWindow(
+      contentRect: NSRect(x: 60, y: 60, width: 1040, height: 680),
+      styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
       backing: .buffered, defer: false)
-    live.appearance = NSAppearance(named: .aqua)
-    live.contentView = NSHostingView(rootView: NavigationStack { WatermarkView(model: watermark) })
-    live.orderFrontRegardless()
-    try "\(live.windowNumber)".write(
-      to: folder.appending(path: "erase-window.txt"), atomically: true, encoding: .utf8)
-    try await Task.sleep(for: .seconds(8))
-    live.orderOut(nil)
+    window.toolbarStyle = .unifiedCompact
+    let hosting = NSHostingView(rootView: MainView(navigator: navigator))
+    hosting.sceneBridgingOptions = [.toolbars, .title]
+    window.contentView = hosting
+    window.orderFrontRegardless()
+    defer { window.orderOut(nil) }
+    for tool in Tool.allCases {
+      navigator.tool = tool
+      try await live(window, tool.rawValue)
+    }
+
+    // 真的擦一处（同一条路：裁、缩、补、贴回），存成 PNG 看接缝；再截一张前后对比
     guard LaMaModel.isInstalled else { return }
-    await watermark.erase.erase()
-    let erased = try #require(watermark.erase.image)
+    navigator.tool = .erase
+    await navigator.erase.erase()
+    let erased = try #require(navigator.erase.image)
     let crop = try #require(
       erased.cropping(to: CGRect(x: cx - 600, y: cy - 300, width: 1200, height: 600)))
     let destination = try #require(
@@ -121,6 +112,16 @@ struct SnapshotProbeTests {
         folder.appending(path: "erase-result.png") as CFURL, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, crop, nil)
     #expect(CGImageDestinationFinalize(destination))
+    navigator.erase.comparing = true
+    try await live(window, "erase-compare")
+  }
+
+  /// 等画面停下来，把窗口编号写进 live-<名字>.txt，停着等外面截
+  private func live(_ window: NSWindow, _ name: String) async throws {
+    try await Task.sleep(for: .seconds(1.5))
+    try "\(window.windowNumber)".write(
+      to: folder.appending(path: "live-\(name).txt"), atomically: true, encoding: .utf8)
+    try await Task.sleep(for: .seconds(2))
   }
 
   private func writeSample(_ url: URL, marked: Bool) throws {

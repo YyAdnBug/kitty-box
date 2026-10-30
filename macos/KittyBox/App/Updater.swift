@@ -44,7 +44,7 @@ import Observation
   /// 正式版才更新（Debug 版 bundle id 不同）
   var isSupported: Bool { Bundle.main.bundleIdentifier == Self.bundleID }
 
-  /// 有新版本时是它（首页顶上那一条）
+  /// 有新版本时是它（侧边栏底下那张小卡）
   var available: Release? {
     if case .available(let release) = state { release } else { nil }
   }

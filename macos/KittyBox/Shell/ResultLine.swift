@@ -14,6 +14,7 @@ struct DoneLine: View {
       } icon: {
         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
       }
+      .layoutPriority(1)
       Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         .buttonStyle(.link)
     }

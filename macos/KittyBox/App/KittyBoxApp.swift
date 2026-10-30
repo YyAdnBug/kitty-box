@@ -1,7 +1,7 @@
 // 应用入口：普通窗口 App（A1：有程序坞图标，文件能拖上去；不像 Kitty Tools 只在菜单栏）。
-// 主窗口是首页 HomeView，关掉后点程序坞图标、或往图标上拖文件，会再打开它；另有关于窗口（AboutView）。
+// 主窗口是 MainView（侧边栏 + 工具页），关掉后点程序坞图标、或往图标上拖文件，会再打开它；另有关于窗口（AboutView）。
 // App 菜单的「关于 Kitty Box」换成自己的关于窗口，下面加「检查更新…」；打开 App 10 秒后自动查一次更新（Updater）。
-// 编辑菜单的「粘贴」换成自己的：⌘V 能把文件交给工具（Paste）。
+// 编辑菜单的「粘贴」换成自己的：⌘V 能把文件交给工具（Paste）；文件菜单「添加文件…」⌘O；「工具」菜单 ⌘1–⌘6 切工具。
 
 import AppKit
 import SwiftUI
@@ -18,10 +18,10 @@ struct KittyBoxApp: App {
 
   var body: some Scene {
     Window("Kitty Box", id: Self.windowID) {
-      HomeView()
+      MainView()
     }
-    .defaultSize(width: 760, height: 520)
-    // 紧凑工具栏：标准的那种在 26 上返回按钮是 36 pt 的玻璃圆，把标题栏撑到 52 pt 高
+    .defaultSize(width: 1040, height: 680)
+    // 紧凑工具栏：标准的那种在 26 上工具栏按钮是 36 pt 的玻璃圆，标题栏约 52 pt 高（用户嫌高）
     .windowToolbarStyle(.unifiedCompact)
     .windowResizability(.contentMinSize)
     .commands { AppCommands() }
@@ -46,6 +46,22 @@ private struct AppCommands: Commands {
       Button("粘贴") { Paste.perform() }.keyboardShortcut("v")
       Button("全选") { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
         .keyboardShortcut("a")
+    }
+    CommandGroup(replacing: .newItem) {
+      Button("添加文件…") {
+        openWindow(id: KittyBoxApp.windowID)
+        Navigator.shared.importing = true
+      }
+      .keyboardShortcut("o")
+    }
+    CommandMenu("工具") {
+      ForEach(Array(Tool.allCases.enumerated()), id: \.element) { index, tool in
+        Button(tool.title) {
+          openWindow(id: KittyBoxApp.windowID)
+          Navigator.shared.tool = tool
+        }
+        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+      }
     }
     CommandGroup(replacing: .appInfo) {
       Button("关于 Kitty Box") { openWindow(id: KittyBoxApp.aboutID) }

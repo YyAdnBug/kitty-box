@@ -1,11 +1,11 @@
 // 视频台标（D4–D6）：拖进一段视频，第一帧铺在中间，在上面拖出台标的位置（可以框几处，框角的 × 删掉一处），点「导出」。
-// 导出好了画面换成前后对比（原视频和导出的第一帧，拖中间的线看），点「对比」关掉接着框。
+// 导出好了画面换成前后对比（原视频和导出的第一帧，拖中间的线看），工具栏「对比」关掉接着框。
+// 工具栏：换一个视频、清空框、对比、导出；底下状态栏写框了几处、导出进度和结果。
 // 框存的是第一帧的像素坐标（左上为原点），画面按比例缩放显示，拖的时候换算回去。
 
 import AppKit
 import Observation
 import SwiftUI
-import UniformTypeIdentifiers
 
 @Observable final class VideoMarkModel {
   enum State {
@@ -72,7 +72,6 @@ import UniformTypeIdentifiers
 
 struct VideoMarkView: View {
   @Bindable var model: VideoMarkModel
-  @State private var choosing = false
   /// 正在拖的框（视图坐标）
   @State private var draft: CGRect?
 
@@ -80,22 +79,45 @@ struct VideoMarkView: View {
     VStack(spacing: 0) {
       if model.source == nil {
         DropZone(
-          symbol: "film", color: Tool.watermark.color, title: "拖入视频",
-          detail: "在第一帧上框出台标，导出时逐帧补上；结果另存成「原名-去水印」"
-        ) { choosing = true }
+          tool: .video, title: "拖入视频",
+          detail: "在第一帧上框出台标，导出时逐帧补上；编码跟原视频走，结果另存成「原名-去水印」")
       } else if let frame = model.frame {
         if model.comparing, let after = model.resultFrame {
-          CompareSlider(before: frame, after: after).padding(16)
+          CompareSlider(before: frame, after: after).padding(20)
         } else {
-          canvas(frame).padding(16)
+          canvas(frame).padding(20)
         }
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-      footer.bottomBar()
+      StatusBar {
+        status
+      } trailing: {
+        if case .exporting(let fraction) = model.state {
+          ProgressView(value: fraction).frame(width: 120)
+          Text(fraction.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
+        }
+      }
     }
-    .fileImporter(isPresented: $choosing, allowedContentTypes: [.movie]) {
-      if case .success(let url) = $0 { model.load(url) }
+    .navigationTitle("视频台标")
+    .toolbar {
+      ToolbarItemGroup {
+        Button("换一个视频", systemImage: "film.stack") { Navigator.shared.importing = true }
+          .help("换一个视频（⌘O）")
+          .disabled(model.busy)
+        Button("清空框", systemImage: "rectangle.dashed.badge.record") { model.rects = [] }
+          .help("清空框好的位置")
+          .disabled(model.rects.isEmpty || model.busy || model.comparing)
+        Toggle("对比原视频", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
+          .help("拖中间的线对比原视频和导出的（第一帧）")
+          .disabled(model.resultFrame == nil)
+      }
+      ToolbarItem(placement: .primaryAction) {
+        Button("导出") { Task { await model.export() } }
+          .buttonStyle(.borderedProminent)
+          .keyboardShortcut(.defaultAction)
+          .disabled(model.rects.isEmpty || model.busy)
+      }
     }
   }
 
@@ -117,6 +139,8 @@ struct VideoMarkView: View {
         Image(decorative: frame, scale: 1)
           .resizable()
           .frame(width: size.width * scale, height: size.height * scale)
+          .clipShape(RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous))
+          .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
           .offset(x: origin.x, y: origin.y)
         ForEach(Array(model.rects.enumerated()), id: \.offset) { index, rect in
           box(toView(rect)) { model.rects.remove(at: index) }
@@ -166,42 +190,21 @@ struct VideoMarkView: View {
 
   // MARK: 底部
 
-  private var footer: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 12) {
-        Text(
-          model.rects.isEmpty
-            ? "在画面上拖出台标的位置，可以框几处" : "框了 \(model.rects.count) 处，导出时逐帧补上"
-        )
-        .foregroundStyle(.secondary)
-        Spacer()
-        if model.resultFrame != nil {
-          Toggle("对比", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
-            .toggleStyle(.button)
-        }
-        if !model.rects.isEmpty, !model.comparing {
-          Button("清空") { model.rects = [] }.disabled(model.busy)
-        }
-        if model.source != nil { Button("换一个视频…") { choosing = true }.disabled(model.busy) }
-        Button("导出") { Task { await model.export() } }
-          .buttonStyle(.borderedProminent)
-          .keyboardShortcut(.defaultAction)
-          .disabled(model.rects.isEmpty || model.busy)
-      }
-      Group {
-        switch model.state {
-        case .exporting(let fraction):
-          ProgressView(value: fraction) { Text("正在导出…") }
-        case .done(let url):
-          DoneLine(text: "存成「\(url.lastPathComponent)」", url: url)
-        case .failed(let reason):
-          FailLine(reason: reason)
-        case .idle, .loading:
-          Text("导出的编码跟原视频走（HEVC 的还是 HEVC，别的出 H.264），原视频不动。")
-            .foregroundStyle(.secondary)
-        }
-      }
-      .font(.caption)
+  @ViewBuilder private var status: some View {
+    switch model.state {
+    case .exporting:
+      Text("正在导出，逐帧补上框住的地方…")
+    case .done(let url):
+      DoneLine(text: "存成「\(url.lastPathComponent)」", url: url)
+    case .failed(let reason):
+      FailLine(reason: reason)
+    case .idle, .loading:
+      Text(
+        [
+          model.source?.lastPathComponent,
+          model.rects.isEmpty ? "在画面上拖出台标的位置，可以框几处" : "框了 \(model.rects.count) 处",
+          "编码跟原视频走，原视频不动",
+        ].compactMap(\.self).joined(separator: " · "))
     }
   }
 }

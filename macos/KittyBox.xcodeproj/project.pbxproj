@@ -1,0 +1,223 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		6B0000000000000000000031 /* 7zz in Embed 7zz */ = {isa = PBXBuildFile; fileRef = 6B0000000000000000000030 /* 7zz */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		6B0000000000000000000032 /* Embed 7zz */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				6B0000000000000000000031 /* 7zz in Embed 7zz */,
+			);
+			name = "Embed 7zz";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		6B0000000000000000000006 /* Kitty Box Dev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitty Box Dev.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6B0000000000000000000007 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		6B0000000000000000000008 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		6B0000000000000000000009 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		6B000000000000000000000A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		6B0000000000000000000030 /* 7zz */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = 7zz; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		6B0000000000000000000005 /* KittyBox */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = KittyBox;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		6B000000000000000000000D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		6B0000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				6B0000000000000000000005 /* KittyBox */,
+				6B0000000000000000000004 /* Config */,
+				6B0000000000000000000033 /* Vendor */,
+				6B0000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		6B0000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6B0000000000000000000006 /* Kitty Box Dev.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6B0000000000000000000004 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				6B0000000000000000000007 /* Base.xcconfig */,
+				6B0000000000000000000008 /* Debug.xcconfig */,
+				6B0000000000000000000009 /* Release.xcconfig */,
+				6B000000000000000000000A /* Info.plist */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		6B0000000000000000000033 /* Vendor */ = {
+			isa = PBXGroup;
+			children = (
+				6B0000000000000000000030 /* 7zz */,
+			);
+			path = Vendor;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		6B000000000000000000000B /* KittyBox */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6B0000000000000000000010 /* Build configuration list for PBXNativeTarget "KittyBox" */;
+			buildPhases = (
+				6B000000000000000000000C /* Sources */,
+				6B000000000000000000000D /* Frameworks */,
+				6B000000000000000000000E /* Resources */,
+				6B0000000000000000000032 /* Embed 7zz */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				6B0000000000000000000005 /* KittyBox */,
+			);
+			name = KittyBox;
+			packageProductDependencies = (
+			);
+			productName = KittyBox;
+			productReference = 6B0000000000000000000006 /* Kitty Box Dev.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		6B0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2710;
+				LastUpgradeCheck = 2710;
+				TargetAttributes = {
+					6B000000000000000000000B = {
+						CreatedOnToolsVersion = 27.1;
+					};
+				};
+			};
+			buildConfigurationList = 6B000000000000000000000F /* Build configuration list for PBXProject "KittyBox" */;
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				Base,
+			);
+			mainGroup = 6B0000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 6B0000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				6B000000000000000000000B /* KittyBox */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6B000000000000000000000E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6B000000000000000000000C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		6B0000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 6B0000000000000000000008 /* Debug.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		6B0000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 6B0000000000000000000009 /* Release.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		6B0000000000000000000013 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		6B0000000000000000000014 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		6B000000000000000000000F /* Build configuration list for PBXProject "KittyBox" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6B0000000000000000000011 /* Debug */,
+				6B0000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6B0000000000000000000010 /* Build configuration list for PBXNativeTarget "KittyBox" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6B0000000000000000000013 /* Debug */,
+				6B0000000000000000000014 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 6B0000000000000000000001 /* Project object */;
+}

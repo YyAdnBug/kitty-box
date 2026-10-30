@@ -1,0 +1,53 @@
+---
+description: Kitty Box 原生 macOS 分支（macos）唯一常驻规则：结构、技术栈白名单、并发红线、风格、签名、发版、语言与 commit
+globs:
+alwaysApply: true
+---
+
+# box-native：原生 macOS 分支红线
+
+从 Kitty Tools 的 `mac-native.mdc` 删减而来，只留 Kitty Box 用得上的。`macos/PLAN.md` 是行为、做法、文件归属的唯一来源；拍板过的事以它为准。下面每条都是硬约束，违反即返工。
+
+## 1. 结构
+- 唯一开发区是 `macos/`：源码在 `KittyBox/{App,Shell,Archive,ImageConvert,Watermark,Resources}`，文件归属照 PLAN §3 的表格；`KittyBoxTests/` 只测纯函数（M1 起建）。
+- 一个概念一个文件；不预建空目录、空文件。每个入口文件（`@main`、页面根视图、脚本）头部写注释说明用途。
+- 禁止为「以后可能用到」建 protocol、manager、registry、factory、DI 容器；不为测试抽 protocol。
+- 从 Kitty Tools 拷组件：用到时再拷，只拷用得上的部分，刻度值保持一致。
+- Windows 版以后在 `windows` 分支另写；mac 这边的行为改了，PLAN 跟着改（Windows 照它做）。
+
+## 2. 技术栈白名单
+- 只用 Apple 框架（SwiftUI、AppKit、ImageIO、Core Image、Core ML、AVFoundation、UniformTypeIdentifiers）和系统命令 `/usr/bin/tar`。
+- **第三方只有 `7zz` 一个例外**（2026-10-30 拍板）：`fetch-vendor.sh` 按 SHA256 拉到 `macos/Vendor/`，不入库；构建时 Xcode 的「Embed 7zz」拷进包里并用本团队证书签名。**禁止任何 SPM 包、第三方库、XcodeGen / Tuist / SwiftLint / create-dmg 这类工具**。数据文件（LaMa 模型、Gemini alpha 图）附各自的 LICENSE。
+- 部署目标 macOS 15.0；`ARCHS = arm64`。构建设置只写在 `macos/Config/*.xcconfig`，pbxproj 的 target 层 buildSettings 保持为空。
+- 用到 macOS 26 API 时就地写 `if #available(macOS 26, *)`，不另建封装。
+- 偏好用 `@AppStorage` / UserDefaults。不建 String Catalog：开发语言 zh-Hans，界面直接写中文字面量。
+
+## 3. 并发红线（Swift 6 语言模式）
+- 默认 `MainActor`（xcconfig：`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`、`SWIFT_APPROACHABLE_CONCURRENCY = YES`）。
+- `@concurrent` 只给重活：等打包 / 解压的子进程、图片编解码、模型推理、视频导出。
+- 跑命令行工具（tar、7zz）一律走 `Shell/Subprocess.swift`（从 Kitty Tools 拷）：进程外、continuation 等结束、输出写临时文件。
+- **系统在渲染线程回调的代码必须 `nonisolated`**：`NSColor(name:dynamicProvider:)` 的取色闭包（`Style.dynamic`）、自定义 `Shape` 的 `path(in:)`、`Canvas(rendersAsynchronously: true)`；AVFoundation 逐帧处理的回调同理。
+- 禁止 `Task.detached`、`@unchecked Sendable`、`nonisolated(unsafe)`（仅 C 全局变量例外，且必须注释原因），禁止到处写 `DispatchQueue`。
+
+## 4. 风格
+- 遵循 Swift API 设计规范；`xcrun swift-format lint --strict -r macos/KittyBox` 无输出是唯一格式标准（配置 `macos/.swift-format`），提交前 `xcrun swift-format format -i -r macos/KittyBox`。
+- 视觉与动效照 Kitty Tools 的 Whisker（`mac-whisker.mdc`）：圆角、曲线、颜色从 `Shell/Style.swift` 取，不硬编码。界面按 macOS 习惯设计（HIG）。
+- 单行文本用 `.lineLimit(1)` + `.truncationMode(.tail)`；日期显示用 `Date.FormatStyle`。
+- **单测和截图自检不写用户真实偏好**：用临时偏好域或注入的值，连「先写再恢复」也不行。
+- 刻意的简化写 `ponytail:` 注释，写明上限和升级路径。
+- **不覆盖用户的原文件**：结果一律另存在旁边（重名加「 2」，去水印加「-去水印」）。
+
+## 5. 签名
+- Apple Development 自动签名，`DEVELOPMENT_TEAM = HTX9F4KG39`；**禁止「Sign to Run Locally」/ adhoc**（TCC 按 cdhash 记账，每次重建授权都会作废）。
+- Bundle ID：Release `com.yy.kitty-box`，Debug `com.yy.kitty-box.dev`，以后不再改。
+- 自检：`codesign -d -r- <app>` 的输出必须含 `anchor apple generic` 和 bundle id；包里的 `7zz` 也要是本团队签名、带强化运行时（`build-dmg.sh` 会查）。
+- **永不公证**。Release 保持 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO`，发布包里不能有 `get-task-allow`。
+
+## 6. 发版
+- 版本号唯一数据源是 Base.xcconfig 的 `MARKETING_VERSION`。改它必须在 `macos/KittyBox/Resources/changelog.json` 追加该版本条目（`{version, date, summary, changes:[{type, scope, text}]}`，`type` 只允许 feat / fix / perf / ui）；缺条目时 `build-dmg.sh` 会中止。
+- 打包只用 `macos/build-dmg.sh`；tag 用 `macos-v*`，打在 `macos` 分支；发布到 github.com/YyAdnBug/kitty-box。建仓库、推送、发 release 都要用户点头。
+
+## 7. 语言与 commit
+- 用中文回答；文档写中文，代码注释可以写中文。
+- commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore；**标题一行、70 字以内，空一行再写正文**（原因、改动、验证都进正文）。旧提交不改。
+- **界面文案不出现其他 App / 产品**：对标只写在规则、PLAN 和代码注释里。功能本身要用的名字照写（如 Windows、7-Zip、Gemini）。

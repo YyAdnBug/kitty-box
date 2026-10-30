@@ -1,0 +1,37 @@
+.DS_Store
+
+# 本地环境变量
+.env
+.env.*
+
+# 本地 AI / agent 工具目录（只放行 .cursor/rules/）
+.agents/
+.codegraph/
+.cursor/*
+!.cursor/rules/
+.claude/
+
+# Xcode 工程：构建产物（含拍板页的本地副本 macos/build/research/）、用户态
+macos/build/
+xcuserdata/
+
+# 随包的第三方程序和模型：fetch-vendor.sh 按 SHA256 拉，不入库（E3）
+macos/Vendor/
+
+# 以后的 Windows 版：构建产物、Visual Studio 用户态
+windows/build/
+windows/**/bin/
+windows/**/obj/
+.vs/
+*.csproj.user
+
+# 签名证书、私钥、描述文件（任何位置都不入库）
+.secrets/
+*.p12
+*.p8
+*.pem
+*.key
+*.mobileprovision
+
+# 常见误写文件名（AGENTs.md 不能写进来：磁盘不分大小写时它也会把 AGENTS.md 忽略掉）
+CALUDE.md

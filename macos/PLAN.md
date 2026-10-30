@@ -67,7 +67,11 @@
 - 只用 ImageIO：
   - 读取（本机实测）：HEIC、WebP、AVIF、JXL、RAW、PSD、ICO 等；
   - 写出：JPEG、PNG、HEIC、AVIF、TIFF、GIF、BMP、ICO、ICNS、PDF。
-- 支持批量转换和质量滑块。
+- 支持批量转换（一张一张转）；JPEG、HEIC、AVIF 有质量滑块（默认 85%）。换了格式或质量，转好的那些回到「等着」。
+- 结果放在原图旁边、换扩展名，重名加「 2」；拍摄时间、相机、定位这些信息原样带过去（C3）。
+- 照片的「旋转方向」标记 PNG、GIF、BMP 这些格式不认：一律按方向转正了再写，标记改成 1。解码走缩略图接口（为了转正），16 位、HDR 会变成 8 位（`ponytail:`）。
+- 动图、多页的图转 GIF、TIFF、PDF 时保留每一帧，转别的只取第一帧。
+- 2026-10-30 实测：JPEG 自己会把透明处垫成白色；ICO 只收边长 ≤ 256 的正方形、ICNS 只收标准尺寸的正方形，所以这两种先等比放进透明的正方形画布，出几种尺寸（ICO 16/32/48/256，ICNS 16–1024）；PDF 能写不能读。
 - 不支持 WebP 输出（系统不能写 WebP）。
 
 ### Gemini 角标
@@ -100,9 +104,9 @@
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyBoxApp.swift`（`@main`，主窗口）、`AppDelegate.swift`（`application(_:open:)`：拖到程序坞图标上、「打开方式」选了本 App 的文件交给 Navigator；能收哪些写在 `Config/Info.plist` 的 `CFBundleDocumentTypes`：压缩包 Alternate，其余 None） |
-| `Shell/` | `HomeView.swift`（四格首页，照 Kitty Tools 的 HomePanel；文件拖到哪一格交给哪个工具）、`Navigator.swift`（首页导航 + 拖进来的文件往哪送：全是压缩包就解压，不然交给打包；各工具页的状态放这里。M2 起非压缩包改成「打开首页让你选」）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
+| `Shell/` | `HomeView.swift`（四格首页，照 Kitty Tools 的 HomePanel；文件拖到哪一格交给哪个工具）、`Navigator.swift`（首页导航 + 拖进来的文件往哪送：全是压缩包就解压，里面有图片就回首页、顶上一条提示让你点一格交给它，别的交给打包；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」，各工具共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
 | `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、解完的清理和挪位置）、`PackView.swift`（打包页和它的 PackModel）、`UnpackView.swift`（解压页和它的 UnpackModel：一个接一个解、就地问密码） |
-| `ImageConvert/` | `ImageConverter.swift`、`ImageConvertView.swift` |
+| `ImageConvert/` | `ImageConverter.swift`（ImageIO 读写、转正方向、图标格式）、`ConvertView.swift`（转换页和它的 ConvertModel） |
 | `Watermark/` | `GeminiMark.swift`、`Inpainter.swift`、`EraseCanvas.swift`、`VideoDelogo.swift`、`Delogo.ci.metal`、`WatermarkView.swift` |
 | `Resources/` | `Assets.xcassets`（小猫图标）、`changelog.json`、Gemini alpha 图和各份 LICENSE |
 | `macos/` | `Config/{Base,Debug,Release}.xcconfig`（`Tests.xcconfig` M1 加）、`build-dmg.sh`、`fetch-vendor.sh`（拉 7zz 和模型到被忽略的 `Vendor/`，7zz 的许可证写到 `Resources/7zz-LICENSE.txt` 入库）、`brand-icons.swift`（同一只小黑猫扒着纸箱，青绿底板） |
@@ -117,8 +121,9 @@
 - `WindowsNamesTests`：非法字符、结尾空格或点、保留名，以及全角符号（比如「：」）不算问题；
 - `GeminiMarkTests`：在已知图片上合成水印，去掉后每个像素误差不超过 2，并且能选对候选位置；
 - `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走；外加名字的纯函数；
-- `ImageConverterTests`：各种输出格式往返转换一遍；
-- 界面用 SnapshotProbeTests 做屏外截图检查，等 M1 有界面后再建。
+- `ImageConverterTests`：10 种格式各转一遍（类型、尺寸、JPEG 透明处是白的、图标是正方形）、拍摄信息带过去和转正方向、动图留着每一帧、能读什么；
+- `NavigatorTests`：拖进来的文件往哪送、哪几格能收；
+- `SnapshotProbeTests`：屏外截图自检（照 Kitty Tools），把三个工具页带着示例数据画成 PNG；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
 
 ## 4. 签名与打包
 
@@ -135,7 +140,7 @@
 - **M0 骨架**（2026-10-30 做完）：`git init -b macos`；Xcode 工程（同步文件夹）和 xcconfig；`Style.swift`；小猫纸箱图标和 DMG 背景；`build-dmg.sh`、`fetch-vendor.sh`；AGENTS / CLAUDE / 规则文档；四格首页（点进去是「还没做好」）。测试 target 等 M1 有第一个单测时加。
 - **M1 打包 / 解压**（2026-10-30 做完，23 个单测）：`ZipNames` → `IgnoreRules` → `WindowsNames` → `Archiver` → 打包页、解压页、程序坞拖放。**待你手测**：在 Windows 上双击打开几个包——中文名的 zip、ZipCrypto 加密的、AES 加密的、7z。如果中文名乱码，再加「给中文 Windows 写 GBK 文件名」这一项。
   - ponytail: 没有进度条和取消（大包只转圈）；7zz 的 `-bsp1` 能给进度，要的时候再接。
-- **M2 图片转换**。
+- **M2 图片转换**（2026-10-30 做完，共 32 个单测）：`ImageConverter` → 转换页 → 首页「收到 N 个文件，点一格交给它」。
 - **M3 Gemini 角标 + 视频台标**。
 - **M4 框选擦除**：选定模型并写进 `fetch-vendor.sh` → 推理和裁剪贴回 → 画笔界面。
 

@@ -186,9 +186,9 @@ struct ArchiverTests {
 
     let box = try Sandbox()
     let taken = try box.file("报告.docx")
-    #expect(Archiver.uniqueURL(taken).lastPathComponent == "报告 2.docx")
+    #expect(taken.uniqued().lastPathComponent == "报告 2.docx")
     try box.file("报告 2.docx")
-    #expect(Archiver.uniqueURL(taken).lastPathComponent == "报告 3.docx")
-    #expect(Archiver.uniqueURL(box.root.appending(path: "没有")).lastPathComponent == "没有")
+    #expect(taken.uniqued().lastPathComponent == "报告 3.docx")
+    #expect(box.root.appending(path: "没有").uniqued().lastPathComponent == "没有")
   }
 }

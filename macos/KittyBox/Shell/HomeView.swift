@@ -1,5 +1,6 @@
 // 首页（A2）：四个工具一格一个，点一格进去用，左上角返回。照 Kitty Tools 主界面的格子：家族色块 + 名字 + 一行说明。
-// 文件拖到哪一格就交给哪个工具，拖到格子外面按类型分派（Navigator）。还没做的工具进去是一句「还没做好」。
+// 文件拖到哪一格就交给哪个工具，拖到格子外面按类型分派（Navigator）；有图片时顶上一条提示，点一格交给它。
+// 还没做的工具进去是一句「还没做好」。
 
 import SwiftUI
 
@@ -45,7 +46,7 @@ enum Tool: CaseIterable, Identifiable, Hashable {
   }
 
   /// 做好了、能收文件的工具
-  var isReady: Bool { self == .pack || self == .unpack }
+  var isReady: Bool { self != .watermark }
 }
 
 struct HomeView: View {
@@ -54,12 +55,23 @@ struct HomeView: View {
 
   var body: some View {
     NavigationStack(path: $navigator.path) {
-      HStack(spacing: 12) {
-        ForEach(Tool.allCases) { tool in
-          ToolButton(tool: tool) {
-            navigator.path.append(tool)
-          } drop: { urls in
-            navigator.open(tool, with: urls)
+      VStack(spacing: 12) {
+        if !navigator.pending.isEmpty { pendingBanner }
+        HStack(spacing: 12) {
+          ForEach(Tool.allCases) { tool in
+            let pending = navigator.pending
+            let refused = !pending.isEmpty && !navigator.accepts(tool, pending)
+            ToolButton(tool: tool) {
+              if pending.isEmpty {
+                navigator.path.append(tool)
+              } else {
+                navigator.open(tool, with: pending)
+              }
+            } drop: { urls in
+              navigator.open(tool, with: urls)
+            }
+            .disabled(refused)
+            .opacity(refused ? 0.4 : 1)
           }
         }
       }
@@ -75,7 +87,8 @@ struct HomeView: View {
         switch tool {
         case .pack: PackView(model: navigator.pack)
         case .unpack: UnpackView(model: navigator.unpack)
-        case .convert, .watermark:
+        case .convert: ConvertView(model: navigator.convert)
+        case .watermark:
           ContentUnavailableView(
             tool.title, systemImage: tool.symbol, description: Text("还没做好，后面几批加上。")
           )
@@ -84,8 +97,28 @@ struct HomeView: View {
       }
     }
     // 进到工具页时窗口最小高度跟着变大（工具页自己的 minHeight 传不到窗口上）
-    .frame(minWidth: 600, minHeight: navigator.path.isEmpty ? 220 : 560)
+    .frame(
+      minWidth: 600,
+      minHeight: navigator.path.isEmpty ? (navigator.pending.isEmpty ? 220 : 270) : 560
+    )
     .onAppear { navigator.openWindow = openWindow }
+  }
+
+  /// 收到文件、还没选工具时顶上的一条
+  private var pendingBanner: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "tray.and.arrow.down.fill").foregroundStyle(.secondary)
+      Text(
+        navigator.pending.count == 1
+          ? "收到「\(navigator.pending[0].lastPathComponent)」，点一格交给它"
+          : "收到 \(navigator.pending.count) 个文件，点一格交给它"
+      )
+      .lineLimit(1).truncationMode(.middle)
+      Spacer()
+      Button("不用了") { navigator.pending = [] }.buttonStyle(.link)
+    }
+    .padding(.horizontal, 12).padding(.vertical, 8)
+    .cardSurface()
   }
 }
 

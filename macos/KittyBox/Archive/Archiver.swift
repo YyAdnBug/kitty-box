@@ -98,8 +98,8 @@ enum Archiver {
   /// 打好的包放在 plan.base 里，重名加「 2」
   static func pack(_ plan: PackPlan, options: PackOptions) async throws -> URL {
     if let problem = passwordProblem(options) { throw Failure.failed(problem) }
-    let archive = uniqueURL(
-      plan.base.appending(path: archiveName(for: plan.items, format: options.format)))
+    let archive = plan.base.appending(path: archiveName(for: plan.items, format: options.format))
+      .uniqued()
     let list = FileManager.default.temporaryDirectory.appending(path: "kittybox-\(UUID()).txt")
     // ponytail: 名字里带换行的文件会把清单拆坏；真遇到再换成一个一个传
     try plan.files.joined(separator: "\n").write(to: list, atomically: true, encoding: .utf8)
@@ -129,7 +129,7 @@ enum Archiver {
   static func unpack(_ archive: URL, password: String = "") async throws -> URL {
     let parent = archive.deletingLastPathComponent()
     let name = folderName(for: archive)
-    let work = uniqueURL(parent.appending(path: ".\(name) 解压中"))
+    let work = parent.appending(path: ".\(name) 解压中").uniqued()
     try FileManager.default.createDirectory(at: work, withIntermediateDirectories: false)
     do {
       // 没给密码也要传一个：不传的话 tar 会对着空的标准输入连问上万次，7zz 会卡在问密码；不加密的包会忽略它
@@ -191,12 +191,12 @@ enum Archiver {
     let parent = work.deletingLastPathComponent()
     let children = try fileManager.contentsOfDirectory(atPath: work.path)
     if children.count == 1 {
-      let target = uniqueURL(parent.appending(path: children[0]))
+      let target = parent.appending(path: children[0]).uniqued()
       try fileManager.moveItem(at: work.appending(path: children[0]), to: target)
       try fileManager.removeItem(at: work)
       return target
     }
-    let target = uniqueURL(parent.appending(path: name))
+    let target = parent.appending(path: name).uniqued()
     try fileManager.moveItem(at: work, to: target)
     return target
   }
@@ -244,21 +244,6 @@ enum Archiver {
   /// 打出来的包叫什么：一样东西就用它的名字，几样就叫「归档」（同访达）
   nonisolated static func archiveName(for items: [URL], format: Format) -> String {
     (items.count == 1 ? items[0].lastPathComponent : "归档") + "." + format.rawValue
-  }
-
-  /// 已经有同名的就加「 2」「 3」……（同访达），加在扩展名前面
-  nonisolated static func uniqueURL(_ url: URL) -> URL {
-    let fileManager = FileManager.default
-    guard fileManager.fileExists(atPath: url.path) else { return url }
-    let folder = url.deletingLastPathComponent()
-    let ext = url.pathExtension
-    let stem = url.deletingPathExtension().lastPathComponent
-    for number in 2... {
-      let name = "\(stem) \(number)" + (ext.isEmpty ? "" : "." + ext)
-      let candidate = folder.appending(path: name)
-      if !fileManager.fileExists(atPath: candidate.path) { return candidate }
-    }
-    return url
   }
 
   // MARK: 其余

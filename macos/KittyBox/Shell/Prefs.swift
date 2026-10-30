@@ -8,4 +8,7 @@ enum Prefs {
   /// 打包：上次选的格式、「让 Windows 自带解压也能打开」（B10）
   static let packFormat = "packFormat"
   static let packWindowsCompatible = "packWindowsCompatible"
+  /// 图片转换：上次选的格式和质量
+  static let convertFormat = "convertFormat"
+  static let convertQuality = "convertQuality"
 }

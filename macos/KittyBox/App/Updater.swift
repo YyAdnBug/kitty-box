@@ -8,7 +8,6 @@
 
 import AppKit
 import Observation
-import Synchronization
 
 @Observable final class Updater {
   struct Release: Equatable {
@@ -192,23 +191,6 @@ import Synchronization
 
   private static func run(_ tool: String, _ arguments: [String], failure: String) async throws {
     guard try await Subprocess.run(tool, arguments).status == 0 else { throw UpdateError(failure) }
-  }
-}
-
-/// 看着一次下载下了多少（同 Kitty Tools：async 的 download(from:) 不报进度，委托只在 didCreateTask 把任务交过来，
-/// 之后看它的 progress）。服务器没给大小就不报。观察的令牌放在 Mutex 里（不用 nonisolated(unsafe)）
-private final class DownloadWatcher: NSObject, URLSessionTaskDelegate, Sendable {
-  private let report: @Sendable (Double) -> Void
-  private let observation = Mutex<NSKeyValueObservation?>(nil)
-
-  init(report: @escaping @Sendable (Double) -> Void) { self.report = report }
-
-  func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-    let token = task.progress.observe(\.fractionCompleted) { [report] _, _ in
-      let expected = task.countOfBytesExpectedToReceive
-      if expected > 0 { report(Double(task.countOfBytesReceived) / Double(expected)) }
-    }
-    observation.withLock { $0 = token }
   }
 }
 

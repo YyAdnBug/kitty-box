@@ -18,7 +18,7 @@
 - Swift 6 语言模式，默认 `MainActor` 隔离 + approachable concurrency。
 - SwiftUI + AppKit；ImageIO、Core Image、Core ML、AVFoundation。
 - 系统命令：`/usr/bin/tar`（zip 解压）。
-- 第三方：只有随包的 `7zz`（7-Zip 26.05，`fetch-vendor.sh` 按 SHA256 拉，不入库）；数据文件：LaMa 模型（M4）、Gemini alpha 图（M3）。
+- 第三方：只有随包的 `7zz`（7-Zip 26.05，`fetch-vendor.sh` 按 SHA256 拉，不入库）；数据文件：Gemini α 图（随包）、LaMa 模型（不随包，画笔擦除第一次用时下载到 Application Support，`Watermark/LaMaModel.swift`）。
 - Xcode 27 工程，构建设置全在 xcconfig；`hdiutil` 打 DMG；Apple Development 签名（Team `HTX9F4KG39`），不公证。
 
 ## 目录结构
@@ -29,7 +29,7 @@ macos/
 ├── KittyBox/                # App/ Shell/ Resources/（以后 Archive/ ImageConvert/ Watermark/，见 PLAN §3）
 ├── Config/                  # Base / Debug / Release.xcconfig、Info.plist（局部）、dmg-background.tiff
 ├── Vendor/                  # fetch-vendor.sh 拉下来的 7zz（不入库）
-├── fetch-vendor.sh          # 拉 7zz（以后加 LaMa 模型），按 SHA256 校验
+├── fetch-vendor.sh          # 拉 7zz，按 SHA256 校验（LaMa 模型 App 用时自己下）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + 更新用 zip → notes
 ├── brand-icons.swift        # 品牌图标（小黑猫扒着纸箱）+ DMG 背景
 ├── .swift-format

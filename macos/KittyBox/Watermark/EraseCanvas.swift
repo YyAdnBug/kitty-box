@@ -1,6 +1,7 @@
 // 画笔擦除（D2、D3）：拖进一张图，在上面涂住要擦掉的地方（能调笔刷、⌘Z 撤销），点「擦除」交给 Inpainter 补；
 // 擦完还能接着涂下一处，撤销也能退回上一次擦除。满意了点「存成」，另存成「原名-去水印」，原图不动。
 // 涂的笔画存原图的像素坐标；笔刷大小按屏幕上看着的粗细，落笔时换算成原图像素。
+// 补图模型第一次用要先下载（LaMaModel，约 216 MB）：没下时页面顶上一条「下载」，下好之前能涂、不能擦。
 
 import AppKit
 import Observation
@@ -115,6 +116,7 @@ import UniformTypeIdentifiers
 
 struct EraseCanvas: View {
   @Bindable var model: EraseModel
+  @Bindable private var download = LaMaDownload.shared
   @State private var choosing = false
   /// 笔刷在屏幕上的粗细（点）
   @State private var brush: CGFloat = 28
@@ -123,6 +125,10 @@ struct EraseCanvas: View {
 
   var body: some View {
     VStack(spacing: 0) {
+      if download.state != .ready {
+        modelBanner.padding(.horizontal, 20).padding(.vertical, 10)
+        Divider()
+      }
       if model.source == nil {
         DropHint(text: "把图片拖到这里，涂住要擦掉的地方", symbol: "paintbrush.pointed") { choosing = true }
           .padding(20)
@@ -199,6 +205,35 @@ struct EraseCanvas: View {
     }
   }
 
+  /// 模型还没下好时顶上的一条
+  @ViewBuilder private var modelBanner: some View {
+    switch download.state {
+    case .ready:
+      EmptyView()
+    case .missing:
+      HStack(spacing: 10) {
+        Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
+        Text(
+          "画笔擦除要用一个补图模型（约 \(LaMaModel.downloadSize.formatted(.byteCount(style: .file)))），第一次用先下载，之后不用联网。"
+        )
+        .font(.callout)
+        Spacer()
+        Button("下载") { Task { await download.start() } }.buttonStyle(.borderedProminent)
+      }
+    case .downloading(let fraction):
+      ProgressView(value: fraction) {
+        Text("正在下载补图模型 · \(Int((fraction * 100).rounded()))%（下完还要编译几秒）").font(.caption)
+      }
+    case .failed(let reason):
+      HStack(spacing: 10) {
+        Label(reason, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+          .font(.callout).lineLimit(2)
+        Spacer()
+        Button("重试") { Task { await download.start() } }
+      }
+    }
+  }
+
   private var footer: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 12) {
@@ -214,7 +249,7 @@ struct EraseCanvas: View {
         Button("擦除") { Task { await model.erase() } }
           .buttonStyle(.borderedProminent)
           .keyboardShortcut(.defaultAction)
-          .disabled(model.strokes.isEmpty || model.busy)
+          .disabled(model.strokes.isEmpty || model.busy || download.state != .ready)
       }
       switch model.state {
       case .saved(let url):

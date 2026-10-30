@@ -1,5 +1,6 @@
 // Inpainter / EraseModel：裁哪一块（留上下文、尽量正方形、不出图）、笔画画成的遮罩和它的外接框；
-// 再真的跑一次 LaMa：平滑底色上一个红方块，涂住补掉，红没了、像底色，涂的范围外一个像素都不动；撤销先撤笔画再撤擦除。
+// 再真的跑一次 LaMa（模型已经下载过才跑，见 LaMaModelTests）：平滑底色上一个红方块，涂住补掉，红没了、像底色，
+// 涂的范围外一个像素都不动；撤销先撤笔画再撤擦除。
 
 import CoreGraphics
 import Foundation
@@ -32,7 +33,7 @@ struct InpainterTests {
     #expect(Inpainter.bounds(of: EraseModel.mask([], width: 10, height: 10)) == nil)
   }
 
-  @Test func erasesRedSquare() async throws {
+  @Test(.enabled(if: LaMaModel.isInstalled)) func erasesRedSquare() async throws {
     let (width, height) = (1000, 700)
     var data = [UInt8](repeating: 255, count: width * height * 4)
     for y in 0..<height {

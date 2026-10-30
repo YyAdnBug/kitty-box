@@ -75,7 +75,7 @@ struct AboutView: View {
       // verbatim：别把名字里的符号当 Markdown
       Text(
         verbatim:
-          "随包的第三方组件：7-Zip（LGPL 2.1）、LaMa 模型（Apache-2.0）、Gemini 去水印的 α 图（MIT），许可证全文在 App 包的 Resources 里。"
+          "随包的第三方组件：7-Zip（LGPL 2.1）、Gemini 去水印的 α 图（MIT）；画笔擦除第一次用时下载 LaMa 模型（Apache-2.0）。许可证全文在 App 包的 Resources 里。"
       )
       .font(.caption).foregroundStyle(.secondary)
       Link(

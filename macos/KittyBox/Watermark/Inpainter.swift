@@ -1,5 +1,5 @@
-// 画笔擦除的补图（D2、D3）：LaMa 的 Core ML 版（mlboydaisuke/LaMa-CoreML，FP32，Apache-2.0，fetch-vendor.sh 拉、构建时拷进
-// Resources/LaMa.mlmodelc）。输入 800×800 的图和 8 位灰度遮罩（白 = 要补），出 800×800 的图；遮罩外的像素它原样带过。
+// 画笔擦除的补图（D2、D3）：LaMa 的 Core ML 版（mlboydaisuke/LaMa-CoreML，FP32，Apache-2.0；不随包，第一次用时由 LaMaModel
+// 下载到 Application Support）。输入 800×800 的图和 8 位灰度遮罩（白 = 要补），出 800×800 的图；遮罩外的像素它原样带过。
 // 大图不缩整张：在遮罩外接框四周留一圈上下文裁一块（尽量正方形），缩到 800 推理，再放大回那块的尺寸，只按遮罩把补好的贴回原图，
 // 原图分辨率不变。贴回用的遮罩边缘羽化一下（按缩放比例模糊几个像素）：大块区域缩过再放大，补出来的颜色会差一两个色阶，
 // 硬边贴回去能看出一圈轮廓（M4 在真照片上看到的）。
@@ -24,7 +24,7 @@ actor Inpainter {
 
     var errorDescription: String? {
       switch self {
-      case .noModel: "补图的模型没装进 App。"
+      case .noModel: "补图模型还没下载。"
       case .failed: "补图没成功。"
       }
     }
@@ -78,12 +78,10 @@ actor Inpainter {
 
   private func loadModel() throws -> MLModel {
     if let model { return model }
-    guard let url = Bundle.main.url(forResource: "LaMa", withExtension: "mlmodelc") else {
-      throw Failure.noModel
-    }
+    guard LaMaModel.isInstalled else { throw Failure.noModel }
     let configuration = MLModelConfiguration()
     configuration.computeUnits = .cpuAndGPU
-    let loaded = try MLModel(contentsOf: url, configuration: configuration)
+    let loaded = try MLModel(contentsOf: LaMaModel.installed, configuration: configuration)
     model = loaded
     return loaded
   }

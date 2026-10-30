@@ -17,7 +17,7 @@ alwaysApply: true
 
 ## 2. 技术栈白名单
 - 只用 Apple 框架（SwiftUI、AppKit、ImageIO、Core Image、Core ML、AVFoundation、UniformTypeIdentifiers）和系统命令 `/usr/bin/tar`。
-- **第三方只有 `7zz` 一个例外**（2026-10-30 拍板）：`fetch-vendor.sh` 按 SHA256 拉到 `macos/Vendor/`，不入库；构建时 Xcode 的「Embed 7zz」拷进包里并用本团队证书签名。**禁止任何 SPM 包、第三方库、XcodeGen / Tuist / SwiftLint / create-dmg 这类工具**。数据文件（LaMa 模型、Gemini alpha 图）附各自的 LICENSE。
+- **第三方只有 `7zz` 一个例外**（2026-10-30 拍板）：`fetch-vendor.sh` 按 SHA256 拉到 `macos/Vendor/`，不入库；构建时 Xcode 的「Embed 7zz」拷进包里并用本团队证书签名。**禁止任何 SPM 包、第三方库、XcodeGen / Tuist / SwiftLint / create-dmg 这类工具**。数据文件附各自的 LICENSE：Gemini α 图随包；LaMa 模型不随包（2026-10-30 用户要求，安装包从约 200 MB 降到几 MB），画笔擦除第一次用时下载到 Application Support，固定 revision 和 SHA256，对不上不装。
 - 部署目标 macOS 15.0；`ARCHS = arm64`。构建设置只写在 `macos/Config/*.xcconfig`，pbxproj 的 target 层 buildSettings 保持为空。
 - 用到 macOS 26 API 时就地写 `if #available(macOS 26, *)`，不另建封装。
 - 偏好用 `@AppStorage` / UserDefaults。不建 String Catalog：开发语言 zh-Hans，界面直接写中文字面量。

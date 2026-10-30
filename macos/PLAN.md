@@ -16,7 +16,7 @@
 | 随包的东西 | 版本 / 来源 | 许可 | 怎么进包 |
 |---|---|---|---|
 | `7zz` | 7-Zip 26.05，`github.com/ip7z/7zip/releases/download/26.05/7z2605-mac.tar.xz`，SHA256 `12ef6830317743cfd3f0ab1724bde43fcc270d8b6d8564f8c12c2a2b7f993570`（与 GitHub release 的 digest 一致） | LGPL-2.1 + unRAR 限制 | 不入库（E3）：`fetch-vendor.sh` 按 SHA256 拉下来，原包是 universal、没签名，脚本里 `lipo -thin arm64` 后放到被忽略的 `Vendor/7zz`；Copy Files 到 Executables 并勾 Code Sign On Copy；`7zz-License.txt` 进 Resources |
-| LaMa Core ML 模型 | Hugging Face `mlboydaisuke/LaMa-CoreML` 的 revision `5ed76e3`（FP32，输入 800×800 的 BGRA 图 + 8 位灰度遮罩）；Manifest.json / model.mlmodel / weight.bin 三个文件各自固定 SHA256 | Apache-2.0 | 约 207 MB（编译后），不入库：`fetch-vendor.sh` 拉、校验、`coremlcompiler` 编译成 `Vendor/LaMa.mlmodelc`，Xcode 的「Embed LaMa」拷进 Resources；许可证全文 `Resources/lama-LICENSE.txt` 入库 |
+| LaMa Core ML 模型（**不随包**） | Hugging Face `mlboydaisuke/LaMa-CoreML` 的 revision `5ed76e3`（FP32，输入 800×800 的 BGRA 图 + 8 位灰度遮罩）；Manifest.json / model.mlmodel / weight.bin 三个文件各自固定 SHA256，写在 `Watermark/LaMaModel.swift` | Apache-2.0 | 下载约 216 MB。2026-10-30 用户改成「用时下载」：画笔擦除第一次用时 App 自己下载、校验、`MLModel.compileModel` 编译，放进 `~/Library/Application Support/Kitty Box/Models/LaMa.mlmodelc`（正式版和开发版共用）；许可证全文 `Resources/lama-LICENSE.txt` 入库 |
 | Gemini α 图 | GargantuaX/gemini-watermark-remover commit `ddd67a7` 的 `src/core/embeddedAlphaMaps.js` 里内嵌的 4 张（36-v2、48、96、96-20260520），原样解成 Float32 小端 | MIT | 入库：`Resources/gemini-alpha-*.bin`（共约 88 KB），附 `gemini-watermark-LICENSE.txt` |
 
 ## 2. 各功能的做法
@@ -84,7 +84,8 @@
 - **还没拿真的 Gemini 图验过**，单测用的是照 Gemini 公式合成的星标。
 
 ### 画笔擦除
-- **模型选型（M4，2026-10-30 实测）**：比了两份。`Jia-Liu/big-lama-coreml` 只有 95 MB，但实际是半精度，补出来的地方明显偏色；`mlboydaisuke/LaMa-CoreML`（FP32，约 207 MB）几乎看不出来，速度一样。选后者，**App 因此约 225 MB，比拍板时估的 110 MB 大一倍**（D2 仍是随包）。
+- **模型选型（M4，2026-10-30 实测）**：比了两份。`Jia-Liu/big-lama-coreml` 只有 95 MB，但实际是半精度，补出来的地方明显偏色；`mlboydaisuke/LaMa-CoreML`（FP32，约 207 MB）几乎看不出来，速度一样。选后者。
+- **用时下载（D2 改，2026-10-30 用户拍板）**：模型随包时安装包约 200 MB，用户嫌大，改成画笔擦除第一次用时下载，安装包只剩几 MB。没下时画笔擦除页顶上一条「下载」（带进度），下好之前能涂、不能擦；下载用 App 自己的 URLSession（`Shell/DownloadWatcher` 报进度），三个文件按 SHA256 校验，对不上不装。
 - 计算单元只用 CPU + GPU（`.cpuAndGPU`）：800×800 一次约 0.7 s；`.all` 带上神经网络引擎反而 3–4 s，第一次还要先编译将近两分钟。模型第一次用时加载（约 1 s），之后留在 `Inpainter` 这个 actor 里。
 - 画笔涂出遮罩（笔画存原图像素坐标，笔刷粗细按屏幕上看着的换算），⌘Z 先撤笔画、再撤上一次擦除；擦完能接着涂；满意了「存成」另存「原名-去水印」（同格式、照片信息带过去、方向转正）。
 - 补：遮罩外接框四周留一圈上下文（至少 32，多则框边长的一半），裁一块尽量正方形、至少 256、不出图，拉成 800×800 推理，放大回那块的尺寸，只按遮罩贴回原图，原图分辨率不变。模型自己会把遮罩外原样带过，所以输入不用先清零。
@@ -129,7 +130,8 @@
 - `WindowsNamesTests`：非法字符、结尾空格或点、保留名，以及全角符号（比如「：」）不算问题；
 - `GeminiMarkTests`：照 Gemini 公式在有纹理的图上盖星标，几种候选都认得对，去掉后每个像素误差不超过 3（α 不到 3/255 的边缘上游不动，那里本来差 2–3）；没盖的认不出、不出文件；
 - `VideoDelogoTests`：补像素的纯函数；用 AVAssetWriter 造一段带白色台标的小视频，框上导出后台标那里变回底色；
-- `InpainterTests`：裁哪一块、笔画画成的遮罩和外接框；真跑一次 LaMa 把平滑底色上的红方块补掉（涂的范围外一个像素不动）；撤销的顺序；
+- `InpainterTests`：裁哪一块、笔画画成的遮罩和外接框；真跑一次 LaMa 把平滑底色上的红方块补掉（涂的范围外一个像素不动，模型下载过才跑）；撤销的顺序；
+- `LaMaModelTests`：用 `file://` 模拟下载（按 SHA256 校验、照目录结构放好、进度报到 1；对不上不放）；真从 Hugging Face 下一遍平时跳过，`TEST_RUNNER_KITTY_LIVE_MODEL=1` 时跑（约 3 分钟）；
 - `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走；外加名字的纯函数；
 - `ImageConverterTests`：10 种格式各转一遍（类型、尺寸、JPEG 透明处是白的、图标是正方形）、拍摄信息带过去和转正方向、动图留着每一帧、能读什么；
 - `NavigatorTests`：拖进来的文件往哪送、哪几格能收；
@@ -143,8 +145,8 @@
 - 版本号只在 `Base.xcconfig` 的 `MARKETING_VERSION` 里改，同时要在 `changelog.json` 加一条，否则 `build-dmg.sh` 会中止。
 - `build-dmg.sh` 照搬 Kitty Tools 的路径 B，另外加两项检查：
   - `codesign -d -r-` 看 `7zz` 是用本团队证书签的；
-  - LaMa 模型在包里（SHA256 在 fetch-vendor.sh 里已经校验过）。
-- 包体：LaMa 约 207 MB + 7zz 约 3 MB + 其余几 MB，共约 215 MB（Debug 实测）。
+  - LaMa 模型**不在**包里（用时下载，别不小心打进来）。
+- 包体：7zz 约 3 MB + 其余几 MB；LaMa 模型不随包，第一次用画笔擦除时下载约 216 MB。
 
 ## 5. 里程碑
 
@@ -155,6 +157,7 @@
 - **M3 Gemini 角标 + 视频台标**（2026-10-30 做完，共 38 个单测）：`GeminiMark` → `VideoDelogo` → 去水印页（画笔擦除那一格先空着）。**待你手测**：拿真的 Gemini 生成图、带台标的真视频各试一次。
 - **M4 画笔擦除**（2026-10-30 做完，共 42 个单测）：选定模型并写进 `fetch-vendor.sh` → `Inpainter` → 画笔界面 → Gemini 认不出时一键改用画笔擦除。**待你手测**：在真图上涂一处水印擦一下。
 - **0.1.0 打好包、没发布**（2026-10-30）：Updater + 关于窗口 + changelog → `build-dmg.sh`（DMG 约 200 MB，带背景和摆位）。GitHub release `macos-v0.1.0` 发了又删了（连 tag）：你还没手测，不该发；main 的 README 也改回「暂时没有可下载的版本」。**等你用本地的 DMG 手测完、明确说发，再重新出包发布。**
+  - 同日用户嫌安装包大（约 200 MB，几乎全是模型），改成模型用时下载，重新出了本地包。
 
 ## 6. 第一版不做
 

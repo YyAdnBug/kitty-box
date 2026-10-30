@@ -69,7 +69,7 @@ struct SnapshotProbeTests {
     watermark.video.rects = [CGRect(x: 118, y: 6, width: 34, height: 20)]
     try await shoot(WatermarkView(model: watermark), "watermark-video", height: 560)
 
-    // 画笔擦除：系统自带的壁纸，涂两笔；再用同一条路（裁、缩、补、贴回）真的擦一处，存成 PNG 看接缝
+    // 画笔擦除：系统自带的壁纸，涂两笔；再用同一条路（裁、缩、补、贴回）真的擦一处，存成 PNG 看接缝（模型下载过才擦）
     let photo = URL(filePath: "/System/Library/Desktop Pictures/Sonoma.heic")
     watermark.mode = .erase
     watermark.erase.load(photo)
@@ -91,6 +91,7 @@ struct SnapshotProbeTests {
       to: folder.appending(path: "erase-window.txt"), atomically: true, encoding: .utf8)
     try await Task.sleep(for: .seconds(8))
     live.orderOut(nil)
+    guard LaMaModel.isInstalled else { return }
     await watermark.erase.erase()
     let erased = try #require(watermark.erase.image)
     let crop = try #require(

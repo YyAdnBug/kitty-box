@@ -5,5 +5,6 @@ Kitty Box 自己的代码以 MIT 许可证发布（见 [LICENSE](LICENSE)）。A
 | 组件 | 用途 | 许可证 | 来源 |
 |---|---|---|---|
 | 7-Zip 26.05（`7zz`） | 打包；解压 7z、RAR 等 | GNU LGPL 2.1，RAR 解压部分另有 unRAR 限制 | https://github.com/ip7z/7zip ，作为单独的程序放在 `Contents/MacOS/7zz`，许可证全文在 `Contents/Resources/7zz-LICENSE.txt` |
+| Gemini 去水印的 α 图（4 张） | 还原 Gemini 生成图右下角的星标 | MIT | https://github.com/GargantuaX/gemini-watermark-remover （commit `ddd67a7` 的 `src/core/embeddedAlphaMaps.js`），放在 `Contents/Resources/gemini-alpha-*.bin`，许可证全文在 `Contents/Resources/gemini-watermark-LICENSE.txt`；反向 alpha 混合的算法也参考了它和 https://github.com/allenk/GeminiWatermarkTool （MIT） |
 
-`7zz` 不在仓库里：`macos/fetch-vendor.sh` 按固定的 SHA256 从上面的地址下载官方包。以后加进来的组件（Gemini 去水印的 alpha 图、LaMa 模型）随它们的批次补进这张表。
+`7zz` 不在仓库里：`macos/fetch-vendor.sh` 按固定的 SHA256 从上面的地址下载官方包。以后加进来的 LaMa 模型随它的批次补进这张表。

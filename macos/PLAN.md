@@ -9,7 +9,7 @@
 
 - Swift 6 语言模式，默认 `MainActor` + approachable concurrency；`@concurrent` 只给重活：解压 / 打包的子进程等待、图片编解码、模型推理、视频导出。
 - macOS 15.0，`ARCHS = arm64`；Xcode 工程，构建设置全在 `Config/*.xcconfig`，pbxproj 的 target / project 层保持为空。
-- Apple 框架：SwiftUI、AppKit、ImageIO、Core Image（含一个 Metal CI kernel）、Core ML、AVFoundation、UniformTypeIdentifiers。
+- Apple 框架：SwiftUI、AppKit、ImageIO、Core Image、Core ML、AVFoundation、UniformTypeIdentifiers。不写 Metal：Xcode 26 起 Metal 工具链要单独下载，每台编译的机器都得装（M3 实测）。
 - 系统命令（经 `Shell/Subprocess.swift`，进程外）：`/usr/bin/tar`（bsdtar 3.5 / libarchive 3.7）。
 - **第三方：只有一个例外 `7zz`**（2026-10-30 拍板）。另有两份随包的数据文件，都不是代码依赖：LaMa 模型和 Gemini alpha 图。不建 SPM 包，不链接第三方库。
 
@@ -17,7 +17,7 @@
 |---|---|---|---|
 | `7zz` | 7-Zip 26.05，`github.com/ip7z/7zip/releases/download/26.05/7z2605-mac.tar.xz`，SHA256 `12ef6830317743cfd3f0ab1724bde43fcc270d8b6d8564f8c12c2a2b7f993570`（与 GitHub release 的 digest 一致） | LGPL-2.1 + unRAR 限制 | 不入库（E3）：`fetch-vendor.sh` 按 SHA256 拉下来，原包是 universal、没签名，脚本里 `lipo -thin arm64` 后放到被忽略的 `Vendor/7zz`；Copy Files 到 Executables 并勾 Code Sign On Copy；`7zz-License.txt` 进 Resources |
 | LaMa Core ML 模型 | Hugging Face 上 CoreMLaMa 转好的 800×800 版，M4 动手前选定一份并固定 SHA256 | Apache-2.0 | 约 100 MB，不入库：同一个 `fetch-vendor.sh` 拉，`build-dmg.sh` 打包前检查 |
-| Gemini alpha 图 | GargantuaX/gemini-watermark-remover 的 `src/assets/bg_48.png`、`bg_96.png`、`bg_96_20260520.png`，固定到某个 commit | MIT | 入库进 Resources，附 `gemini-alpha-LICENSE.txt` |
+| Gemini α 图 | GargantuaX/gemini-watermark-remover commit `ddd67a7` 的 `src/core/embeddedAlphaMaps.js` 里内嵌的 4 张（36-v2、48、96、96-20260520），原样解成 Float32 小端 | MIT | 入库：`Resources/gemini-alpha-*.bin`（共约 88 KB），附 `gemini-watermark-LICENSE.txt` |
 
 ## 2. 各功能的做法
 
@@ -75,10 +75,13 @@
 - 不支持 WebP 输出（系统不能写 WebP）。
 
 ### Gemini 角标
-- 把反向 alpha 混合算法移植成 Swift：`原图 = (水印图 − α·255) / (1 − α)`。α 取 alpha 图每个像素 RGB 三个通道的最大值除以 255；去噪底 3/255，α 上限 0.99。
-- 候选位置（logo 尺寸 / 右下边距）：48/32、96/64、96/192（用 20260520 版的 alpha 图）、48/96。逐个计算该区域灰度和 alpha 图的归一化互相关，取分数最高、并且超过阈值的那个。
-- 没有候选超过阈值时，提示“没认出来”，并提供用框选擦除处理右下角。
-- 上游的候选筛选、残影修补、FDnCNN 降噪都不移植（`ponytail:`）。Gemini 出了新版本，就从上游同步 alpha 图和候选位置，比如 36px 的 v2 版本。
+- 把反向 alpha 混合算法移植成 Swift（`Watermark/GeminiMark.swift`）：`原图 = (水印图 − α·255) / (1 − α)`。α 用上游内嵌的原始数据；α 先减 3/255 的噪底、剩下不到 0.002 的不动，α 上限 0.99（同上游 blendModes.js）。
+- 候选（星标边长 / 右下边距 / α 图），取自上游的 Gemini 尺寸表：48/32/48、96/64/96、96/192/96-20260520、48/96/48、36/96/36-v2、48/89/48（2752×1536）、46/32/96 双线性缩放（1408×768）。
+- 判定照上游的「直接认定」：该区域亮度（Rec. 709）和 α 图的归一化互相关 ≥ 0.3 且 Sobel 梯度的互相关 ≥ 0.12（或 ≥ 0.295 且 ≥ 0.45），过了的里头取亮度分最高的。
+- 按图本身的色彩空间展开像素，不做色彩转换（换了空间，反解的数就不对了）；结果同格式另存成「原名-去水印」，JPEG 质量 0.95，照片信息带过去。
+- 认不出就不出文件，那一行写「没认出 Gemini 角标」；M4 起提供转到画笔擦除。
+- 上游的残影修补、FDnCNN 降噪、深色描边变体、多层叠加、自适应搜位置都不移植（`ponytail:`）。Gemini 出了新版本认不出时，从上游同步 α 图和候选位置。
+- **还没拿真的 Gemini 图验过**，单测用的是照 Gemini 公式合成的星标。
 
 ### 框选擦除
 - 画笔涂出遮罩，支持撤销。
@@ -86,10 +89,11 @@
 - 推理用 `@concurrent`，计算单元交给 Core ML 自己选。
 
 ### 视频固定台标
-- 在第一帧（`AVAssetImageGenerator`）上拖出一个框。
-- 导出：`AVVideoComposition(asset:applyingCIFiltersWithHandler:)` 逐帧处理，交给 `AVAssetExportSession`；音频直接带过。
-- 填补框内像素用一个自写的 Metal CI kernel `Delogo.ci.metal`，思路和 ffmpeg delogo 一样：每个像素按到上下左右四条边的距离，对边上的像素加权插值，边缘做羽化。只照思路自己写，不拷 ffmpeg 的代码。
-- xcconfig 加 `MTL_COMPILER_FLAGS = -fcikernel` 和 `MTLLINKER_FLAGS = -cikernel`。
+- 在第一帧（`AVAssetImageGenerator`，按视频方向转正）上拖出台标，可以框几处，框角的 × 删掉一处。框存第一帧的像素坐标。
+- 导出：`AVMutableVideoComposition.videoComposition(with:applyingCIFiltersWithHandler:)` 逐帧处理，交给 `AVAssetExportSession`，有进度条。编码跟原视频走：HEVC 用 HEVCHighestQuality，其余 HighestQuality（H.264）。
+- 补像素：每帧只把框外 band + 1 圈的小块读回 CPU（`CIContext.render(toBitmap:)`），`VideoDelogo.fill` 按到框外左右上下四条边的距离对边上的像素加权（越近越重），羽化带 4 像素从「全换」过渡到「不换」，再贴回画面。思路同 ffmpeg 的 delogo，代码自己写。
+  - 原计划写 Metal 的 Core Image 核，2026-10-30 实测 Xcode 27 没装 Metal 工具链（要 `xcodebuild -downloadComponent MetalToolchain` 另下），为了不给编译多加前提改成这样；只补一小块，CPU 够快。
+- 音频：导出会话会重新编码成 AAC（高质量），不是原样带过（`ponytail:`；要原样得换成 AVAssetReader / Writer）。
 
 ## 3. 架构与文件表
 
@@ -104,11 +108,11 @@
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyBoxApp.swift`（`@main`，主窗口）、`AppDelegate.swift`（`application(_:open:)`：拖到程序坞图标上、「打开方式」选了本 App 的文件交给 Navigator；能收哪些写在 `Config/Info.plist` 的 `CFBundleDocumentTypes`：压缩包 Alternate，其余 None） |
-| `Shell/` | `HomeView.swift`（四格首页，照 Kitty Tools 的 HomePanel；文件拖到哪一格交给哪个工具）、`Navigator.swift`（首页导航 + 拖进来的文件往哪送：全是压缩包就解压，里面有图片就回首页、顶上一条提示让你点一格交给它，别的交给打包；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」，各工具共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
+| `Shell/` | `HomeView.swift`（四格首页，照 Kitty Tools 的 HomePanel；文件拖到哪一格交给哪个工具）、`Navigator.swift`（首页导航 + 拖进来的文件往哪送：全是压缩包就解压，里面有图片就回首页、顶上一条提示让你点一格交给它，别的交给打包；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`ImageBatch.swift`（一批图一张一张处理的列表模型和一行的样子：图片转换和 Gemini 角标共用）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
 | `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、解完的清理和挪位置）、`PackView.swift`（打包页和它的 PackModel）、`UnpackView.swift`（解压页和它的 UnpackModel：一个接一个解、就地问密码） |
 | `ImageConvert/` | `ImageConverter.swift`（ImageIO 读写、转正方向、图标格式）、`ConvertView.swift`（转换页和它的 ConvertModel） |
-| `Watermark/` | `GeminiMark.swift`、`Inpainter.swift`、`EraseCanvas.swift`、`VideoDelogo.swift`、`Delogo.ci.metal`、`WatermarkView.swift` |
-| `Resources/` | `Assets.xcassets`（小猫图标）、`changelog.json`、Gemini alpha 图和各份 LICENSE |
+| `Watermark/` | `GeminiMark.swift`（找星标、反解、另存）、`VideoDelogo.swift`（第一帧、补像素、导出）、`WatermarkView.swift`（去水印页：三个模式，和 Gemini 那一节）、`VideoMarkView.swift`（视频台标：第一帧上拖框、导出）；M4 加 `Inpainter.swift`、`EraseCanvas.swift` |
+| `Resources/` | `Assets.xcassets`（小猫图标）、`gemini-alpha-*.bin`、`7zz-LICENSE.txt`、`gemini-watermark-LICENSE.txt`；`changelog.json` 第一次发版时加 |
 | `macos/` | `Config/{Base,Debug,Release}.xcconfig`（`Tests.xcconfig` M1 加）、`build-dmg.sh`、`fetch-vendor.sh`（拉 7zz 和模型到被忽略的 `Vendor/`，7zz 的许可证写到 `Resources/7zz-LICENSE.txt` 入库）、`brand-icons.swift`（同一只小黑猫扒着纸箱，青绿底板） |
 | 仓库根目录 | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/box-native.mdc`、`.gitignore` |
 
@@ -119,11 +123,12 @@
 - `ZipNamesTests`：三种 zip 的字节夹具——有 UTF-8 标志、没标志但写的是 UTF-8、没标志写的是 GBK；
 - `IgnoreRulesTests`：通配符、任意层级、`/` 结尾只认文件夹、中间带 `/` 的拒收；
 - `WindowsNamesTests`：非法字符、结尾空格或点、保留名，以及全角符号（比如「：」）不算问题；
-- `GeminiMarkTests`：在已知图片上合成水印，去掉后每个像素误差不超过 2，并且能选对候选位置；
+- `GeminiMarkTests`：照 Gemini 公式在有纹理的图上盖星标，几种候选都认得对，去掉后每个像素误差不超过 3（α 不到 3/255 的边缘上游不动，那里本来差 2–3）；没盖的认不出、不出文件；
+- `VideoDelogoTests`：补像素的纯函数；用 AVAssetWriter 造一段带白色台标的小视频，框上导出后台标那里变回底色；
 - `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走；外加名字的纯函数；
 - `ImageConverterTests`：10 种格式各转一遍（类型、尺寸、JPEG 透明处是白的、图标是正方形）、拍摄信息带过去和转正方向、动图留着每一帧、能读什么；
 - `NavigatorTests`：拖进来的文件往哪送、哪几格能收；
-- `SnapshotProbeTests`：屏外截图自检（照 Kitty Tools），把三个工具页带着示例数据画成 PNG；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
+- `SnapshotProbeTests`：屏外截图自检（照 Kitty Tools），把各工具页（打包、解压、转换、去水印的 Gemini 和视频台标）带着示例数据画成 PNG；平时跳过，`TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>` 时才跑。
 
 ## 4. 签名与打包
 
@@ -141,7 +146,7 @@
 - **M1 打包 / 解压**（2026-10-30 做完，23 个单测）：`ZipNames` → `IgnoreRules` → `WindowsNames` → `Archiver` → 打包页、解压页、程序坞拖放。**待你手测**：在 Windows 上双击打开几个包——中文名的 zip、ZipCrypto 加密的、AES 加密的、7z。如果中文名乱码，再加「给中文 Windows 写 GBK 文件名」这一项。
   - ponytail: 没有进度条和取消（大包只转圈）；7zz 的 `-bsp1` 能给进度，要的时候再接。
 - **M2 图片转换**（2026-10-30 做完，共 32 个单测）：`ImageConverter` → 转换页 → 首页「收到 N 个文件，点一格交给它」。
-- **M3 Gemini 角标 + 视频台标**。
+- **M3 Gemini 角标 + 视频台标**（2026-10-30 做完，共 38 个单测）：`GeminiMark` → `VideoDelogo` → 去水印页（画笔擦除那一格先空着）。**待你手测**：拿真的 Gemini 生成图、带台标的真视频各试一次。
 - **M4 框选擦除**：选定模型并写进 `fetch-vendor.sh` → 推理和裁剪贴回 → 画笔界面。
 
 ## 6. 第一版不做

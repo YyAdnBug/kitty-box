@@ -25,7 +25,7 @@ struct SnapshotProbeTests {
       try Data("x".utf8).write(to: url)
     }
 
-    let convert = ConvertModel()
+    let convert = ImageBatch()
     convert.items = [
       .init(
         source: samples.appending(path: "IMG_0001.HEIC"),
@@ -48,6 +48,23 @@ struct SnapshotProbeTests {
       .init(archive: samples.appending(path: "资源.7z"), state: .needsPassword(again: true)),
     ]
     try await shoot(UnpackView(model: unpack), "unpack")
+
+    let watermark = WatermarkModel()
+    watermark.gemini.items = [
+      .init(
+        source: samples.appending(path: "Gemini_Generated_Image_1.png"),
+        state: .done(samples.appending(path: "Gemini_Generated_Image_1-去水印.png"))),
+      .init(source: samples.appending(path: "截图.png"), state: .failed("没认出 Gemini 角标。")),
+    ]
+    try await shoot(WatermarkView(model: watermark), "watermark-gemini")
+
+    let movie = samples.appending(path: "录屏.mov")
+    try await makeTestVideo(at: movie)
+    watermark.video.load(movie)
+    watermark.mode = .video
+    try await Task.sleep(for: .seconds(1))
+    watermark.video.rects = [CGRect(x: 118, y: 6, width: 34, height: 20)]
+    try await shoot(WatermarkView(model: watermark), "watermark-video", height: 560)
   }
 
   private func shoot(_ page: some View, _ name: String, height: CGFloat = 480) async throws {

@@ -1,5 +1,5 @@
 // 首页的导航，和拖进来的文件往哪送（A1、A2）：拖到某一格就交给那个工具；拖到程序坞图标或首页空白处，全是压缩包就直接解压，
-// 里面有图片就回首页、顶上一条提示让你点一格交给它（图片可能要转格式、要打包，以后还可能要去水印），别的交给打包。
+// 里面有图片或视频就回首页、顶上一条提示让你点一格交给它（图片可能要转格式、去水印、打包），别的交给打包。
 // 各工具页的状态（选了什么、做到哪了）放在这里，回到首页再进去还在。
 
 import AppKit
@@ -12,7 +12,8 @@ import SwiftUI
   var path: [Tool] = []
   let pack = PackModel()
   let unpack = UnpackModel()
-  let convert = ConvertModel()
+  let convert = ImageBatch()
+  let watermark = WatermarkModel()
   /// 拖进来、还没决定交给哪个工具的文件
   var pending: [URL] = []
   /// 首页出现时记下，窗口关着时收到文件用它重新打开
@@ -24,7 +25,7 @@ import SwiftUI
     case .pack: pack.add(urls)
     case .unpack: unpack.add(urls.filter(Archiver.isArchive))
     case .convert: convert.add(urls)
-    case .watermark: break
+    case .watermark: watermark.add(urls)
     }
     path = [tool]
   }
@@ -33,7 +34,7 @@ import SwiftUI
     guard !urls.isEmpty else { return }
     if urls.allSatisfy(Archiver.isArchive) {
       open(.unpack, with: urls)
-    } else if urls.contains(where: ImageConverter.canRead) {
+    } else if urls.contains(where: { ImageConverter.canRead($0) || VideoDelogo.isVideo($0) }) {
       pending = urls
       path = []
     } else {
@@ -47,7 +48,7 @@ import SwiftUI
     case .pack: true
     case .unpack: urls.contains(where: Archiver.isArchive)
     case .convert: urls.contains(where: ImageConverter.canRead)
-    case .watermark: false
+    case .watermark: urls.contains { ImageConverter.canRead($0) || VideoDelogo.isVideo($0) }
     }
   }
 

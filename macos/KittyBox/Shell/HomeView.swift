@@ -1,6 +1,5 @@
 // 首页（A2）：四个工具一格一个，点一格进去用，左上角返回。照 Kitty Tools 主界面的格子：家族色块 + 名字 + 一行说明。
 // 文件拖到哪一格就交给哪个工具，拖到格子外面按类型分派（Navigator）；有图片时顶上一条提示，点一格交给它。
-// 还没做的工具进去是一句「还没做好」。
 
 import SwiftUI
 
@@ -44,9 +43,6 @@ enum Tool: CaseIterable, Identifiable, Hashable {
     case .watermark: Style.Family.watermark
     }
   }
-
-  /// 做好了、能收文件的工具
-  var isReady: Bool { self != .watermark }
 }
 
 struct HomeView: View {
@@ -88,11 +84,7 @@ struct HomeView: View {
         case .pack: PackView(model: navigator.pack)
         case .unpack: UnpackView(model: navigator.unpack)
         case .convert: ConvertView(model: navigator.convert)
-        case .watermark:
-          ContentUnavailableView(
-            tool.title, systemImage: tool.symbol, description: Text("还没做好，后面几批加上。")
-          )
-          .navigationTitle(tool.title)
+        case .watermark: WatermarkView(model: navigator.watermark)
         }
       }
     }
@@ -122,7 +114,7 @@ struct HomeView: View {
   }
 }
 
-/// 一格：点进去；做好了的工具能直接把文件拖上来，拖着经过时描一圈家族色
+/// 一格：点进去；文件能直接拖上来，拖着经过时描一圈家族色
 private struct ToolButton: View {
   let tool: Tool
   let action: () -> Void
@@ -130,7 +122,7 @@ private struct ToolButton: View {
   @State private var targeted = false
 
   var body: some View {
-    let button = Button(action: action) { ToolTile(tool: tool) }
+    Button(action: action) { ToolTile(tool: tool) }
       .buttonStyle(TileButtonStyle())
       .overlay {
         RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
@@ -138,16 +130,12 @@ private struct ToolButton: View {
           .opacity(targeted ? 1 : 0)
           .allowsHitTesting(false)
       }
-    if tool.isReady {
-      button.dropDestination(for: URL.self) { urls, _ in
+      .dropDestination(for: URL.self) { urls, _ in
         drop(urls)
         return true
       } isTargeted: {
         targeted = $0
       }
-    } else {
-      button
-    }
   }
 }
 

@@ -1,4 +1,4 @@
-// Navigator：拖进来的文件往哪送——里面有图片就回首页让你选，没有图片的交给打包；哪几格能收这批文件。
+// Navigator：拖进来的文件往哪送——里面有图片或视频就回首页让你选，别的交给打包；哪几格能收这批文件。
 // （全是压缩包直接解压那一支会真的开始解，留给 ArchiverTests 和手测。）
 
 import Foundation
@@ -10,6 +10,7 @@ struct NavigatorTests {
   private let photo = URL(filePath: "/tmp/kittybox-nav/IMG_0001.heic")
   private let note = URL(filePath: "/tmp/kittybox-nav/说明.txt")
   private let archive = URL(filePath: "/tmp/kittybox-nav/资源.7z")
+  private let movie = URL(filePath: "/tmp/kittybox-nav/录屏.mov")
 
   @Test func imagesWaitOnHome() {
     let navigator = Navigator()
@@ -23,6 +24,12 @@ struct NavigatorTests {
     #expect(navigator.path == [.convert])
     // 不是图片的没加进转换
     #expect(navigator.convert.items.map(\.source) == [photo])
+  }
+
+  @Test func videosWaitOnHome() {
+    let navigator = Navigator()
+    navigator.route([movie])
+    #expect(navigator.pending == [movie])
   }
 
   @Test func otherFilesGoToPack() {
@@ -40,6 +47,9 @@ struct NavigatorTests {
     #expect(navigator.accepts(.unpack, [photo, archive]))
     #expect(navigator.accepts(.convert, [photo, note]))
     #expect(!navigator.accepts(.convert, [note]))
-    #expect(!navigator.accepts(.watermark, [photo]))
+    #expect(navigator.accepts(.watermark, [photo]))
+    #expect(navigator.accepts(.watermark, [movie]))
+    #expect(!navigator.accepts(.watermark, [note]))
+    #expect(!navigator.accepts(.convert, [movie]))
   }
 }

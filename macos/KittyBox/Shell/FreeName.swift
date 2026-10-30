@@ -1,4 +1,5 @@
 // 结果放在原文件旁边时不覆盖已有的：重名就加「 2」「 3」……（同访达），加在扩展名前面。打包、解压、图片转换、去水印共用。
+// 去水印的结果另外在名字后面加「-去水印」（D7）。
 
 import Foundation
 
@@ -14,5 +15,12 @@ extension URL {
       if !fileManager.fileExists(atPath: candidate.path) { return candidate }
     }
     return self
+  }
+
+  /// 同一个文件夹里、名字后面加一段：「图.png」加「-去水印」是「图-去水印.png」
+  nonisolated func adding(_ suffix: String) -> URL {
+    let ext = pathExtension
+    return deletingLastPathComponent().appending(
+      path: deletingPathExtension().lastPathComponent + suffix + (ext.isEmpty ? "" : "." + ext))
   }
 }

@@ -45,7 +45,8 @@ alwaysApply: true
 
 ## 6. 发版
 - 版本号唯一数据源是 Base.xcconfig 的 `MARKETING_VERSION`。改它必须在 `macos/KittyBox/Resources/changelog.json` 追加该版本条目（`{version, date, summary, changes:[{type, scope, text}]}`，`type` 只允许 feat / fix / perf / ui）；缺条目时 `build-dmg.sh` 会中止。
-- 打包只用 `macos/build-dmg.sh`；tag 用 `macos-v*`，打在 `macos` 分支；发布到 github.com/YyAdnBug/kitty-box。建仓库、推送、发 release 都要用户点头。
+- 打包只用 `macos/build-dmg.sh`；tag 用 `macos-v*`，打在 `macos` 分支；发布到 github.com/YyAdnBug/kitty-box。建仓库、推送要用户点头。
+- **发 release（打 tag、上传 DMG、改 README 的下载说明）必须等用户拿本地的 DMG 手测完、明确说「发」**；「全部做完」「不用每批问我」不算。2026-10-30 0.1.0 没测就发了，用户要求删掉，教训在 PLAN §5。本地打好的 DMG 直接给用户测。
 
 ## 7. 语言与 commit
 - 用中文回答；文档写中文，代码注释可以写中文。

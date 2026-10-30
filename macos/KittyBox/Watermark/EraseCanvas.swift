@@ -43,6 +43,17 @@ import UniformTypeIdentifiers
     }
   }
 
+  /// 关掉这一张（读不出时回到空着的样子）
+  func clear() {
+    source = nil
+    image = nil
+    history = []
+    undone = []
+    strokes = []
+    comparing = false
+    state = .idle
+  }
+
   func load(_ url: URL) {
     source = url
     image = nil
@@ -173,6 +184,8 @@ struct EraseCanvas: View {
             }
             controls.padding(.bottom, 14)
           }
+        } else if case .failed(let reason) = model.state {
+          LoadFailed(reason: reason, again: "换一张…") { model.clear() }
         } else {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }

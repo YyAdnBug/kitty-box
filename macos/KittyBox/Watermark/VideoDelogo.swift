@@ -32,12 +32,13 @@ nonisolated enum VideoDelogo {
     UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
   }
 
-  /// 第一帧（已经按视频的方向转正），框台标用
+  /// 第一帧（已经按视频的方向转正），框台标用。往后放宽一秒：不少视频能显示的第一帧不在 0（比如 0.033 秒），
+  /// 卡死在 0 上系统回「无法打开」（-11832，2026-10-30 用户的 tonight.mp4）
   static func firstFrame(of url: URL) async throws -> CGImage {
     let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
     generator.appliesPreferredTrackTransform = true
     generator.requestedTimeToleranceBefore = .zero
-    generator.requestedTimeToleranceAfter = .zero
+    generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
     return try await generator.image(at: .zero).image
   }
 

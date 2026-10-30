@@ -1,5 +1,6 @@
 // 图片转换页（C1–C3、M5）：拖进（⌘V 粘贴、⌘O 添加）图片 → 右边选项栏选转成什么（有损的再调质量）、要不要缩小、
-// 去不去定位 → 页头「转成 X」，几张一起转，结果放在原图旁边。表格列尺寸、大小、转换后的大小和差多少（照常见压图工具）；右键打开 / 在访达中显示 / 移除。
+// 去不去定位 → 页头「转成 X」，几张一起转，结果放在原图旁边。上半是选中那张的预览，转好了是前后对比（M8，能放大看画质）；
+// 下半表格列尺寸、大小、转换后的大小和差多少（照常见压图工具）；右键打开 / 在访达中显示 / 移除。
 // 换了格式、质量、尺寸、定位，转好的那些回到「等待中」，再点一次按新的设置转（旧结果留在原处，新的重名加「 2」）。
 
 import AppKit
@@ -38,9 +39,17 @@ struct ConvertView: View {
       if model.items.isEmpty {
         DropZone(
           tool: .convert, title: "拖入图片",
-          detail: "HEIC、WebP、RAW、PSD 等都能读；可以一次放一批，一张一张转")
+          detail: "HEIC、WebP、RAW、PSD 等都能读；可以一次放一批，几张一起转")
       } else {
-        table
+        // 上半是选中那张的预览，转好了是前后对比（能放大看画质），下半是表格；中间能拖
+        VSplitView {
+          if let item = selected {
+            BeforeAfter(source: item.source, result: item.result, afterLabel: "转换后")
+              .padding(16)
+              .frame(minHeight: 200, idealHeight: 320, maxHeight: .infinity)
+          }
+          table.frame(minHeight: 120, maxHeight: .infinity)
+        }
       }
     } options: {
       optionGroups
@@ -71,11 +80,11 @@ struct ConvertView: View {
           Text(item.source.lastPathComponent).lineLimit(1).truncationMode(.middle)
         }
       }
-      .width(min: 180, ideal: 260)
+      .width(min: 120, ideal: 170)
       TableColumn("尺寸") { PixelSizeText(url: $0.source).foregroundStyle(.secondary) }
-        .width(min: 80, ideal: 100)
+        .width(min: 70, ideal: 90)
       TableColumn("大小") { FileSizeText(url: $0.source).foregroundStyle(.secondary) }
-        .width(min: 60, ideal: 76)
+        .width(min: 54, ideal: 64)
       TableColumn("转换后") { item in
         switch item.state {
         case .waiting: Text("等待中").foregroundStyle(.tertiary)
@@ -88,7 +97,7 @@ struct ConvertView: View {
         case .failed(let reason): FailLine(reason: reason)
         }
       }
-      .width(min: 120, ideal: 160)
+      .width(min: 110, ideal: 130)
     } rows: {
       // 能直接拖到访达或别的 App：转好的拖结果，还没转的拖原图
       ForEach(model.items) { item in
@@ -117,6 +126,11 @@ struct ConvertView: View {
     .spacePreview {
       model.items.filter { selection.contains($0.id) }.map { $0.result ?? $0.source }
     }
+  }
+
+  /// 预览哪一张：选中的那一行，没选就第一张
+  private var selected: FileBatch.Item? {
+    model.items.first { selection.contains($0.id) } ?? model.items.first
   }
 
   @ViewBuilder private var optionGroups: some View {

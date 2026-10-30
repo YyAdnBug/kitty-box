@@ -20,6 +20,8 @@ import SwiftUI
     var state = State.waiting
     /// 正在做时的进度 0–1；不报进度的活是 nil
     var progress: Double?
+    /// 视频转换：只转这一段（秒）；nil = 整段
+    var trim: ClosedRange<Double>?
 
     /// 做好了的结果文件
     var result: URL? { if case .done(let url) = state { url } else { nil } }
@@ -58,6 +60,14 @@ import SwiftUI
 
   func clearFinished() {
     items.removeAll { if case .done = $0.state { true } else { false } }
+  }
+
+  /// 视频转换选了一段（nil = 不剪了）：做好的那个回到「等着」
+  func setTrim(_ id: Item.ID, _ range: ClosedRange<Double>?) {
+    update(id) {
+      $0.trim = range
+      if case .done = $0.state { $0.state = .waiting }
+    }
   }
 
   /// 设置变了：做好的回到「等着」

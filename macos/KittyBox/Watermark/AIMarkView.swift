@@ -71,6 +71,7 @@ struct BatchPreview: View {
   let doneVerb: String
   var handOff: ((URL) -> Void)?
   var checkerboard = false
+  var afterLabel = "去水印后"
   @State private var selection: FileBatch.Item.ID?
 
   var body: some View {
@@ -78,9 +79,12 @@ struct BatchPreview: View {
       list.frame(width: 300)
       Hairline(vertical: true)
       if let item = selected {
-        BeforeAfter(source: item.source, result: item.result, checkerboard: checkerboard)
-          .padding(20)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        BeforeAfter(
+          source: item.source, result: item.result, checkerboard: checkerboard,
+          afterLabel: afterLabel
+        )
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
   }
@@ -119,17 +123,19 @@ struct BatchPreview: View {
   }
 }
 
-/// 一张图的预览：有结果时是前后对比，没有时只是原图
-private struct BeforeAfter: View {
+/// 一张图的预览：有结果时是前后对比，没有时只是原图（AI 水印、去背景、图片转换共用）
+struct BeforeAfter: View {
   let source: URL
   let result: URL?
-  let checkerboard: Bool
+  var checkerboard = false
+  var afterLabel = "去水印后"
   @State private var images: (before: CGImage, after: CGImage?)?
 
   var body: some View {
     Group {
       if let images, let after = images.after {
-        CompareSlider(before: images.before, after: after, checkerboard: checkerboard)
+        CompareSlider(
+          before: images.before, after: after, checkerboard: checkerboard, afterLabel: afterLabel)
       } else if let images {
         Image(decorative: images.before, scale: 1)
           .resizable()

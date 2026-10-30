@@ -1,5 +1,5 @@
 // VideoConverter：测试视频转成 H.264 的 MP4（能读出画面）、缩到 480p 时按短边缩且宽高是偶数、转 GIF 有一串帧且一直循环、
-// 只要声音时出 M4A 只有音轨、没声音的视频转 M4A 说一声；缩小尺寸的纯函数。
+// 只要声音时出 M4A 只有音轨、没声音的视频转 M4A 说一声；剪一段（0.3–0.8 秒）只转这一段，GIF 也只取这一段；缩小尺寸的纯函数。
 
 import AVFoundation
 import Foundation
@@ -70,5 +70,20 @@ struct VideoConverterTests {
       try await VideoConverter.convert(silent, to: .audio, size: .original) { _ in }
     }
     #expect(!FileManager.default.fileExists(atPath: box.root.appending(path: "无声的.m4a").path))
+  }
+
+  @Test func onlyTheTrimmedPart() async throws {
+    let box = try Sandbox()
+    let source = box.root.appending(path: "片段.mov")
+    try await makeTestVideo(at: source)
+    let mp4 = try await VideoConverter.convert(source, to: .h264, size: .original, range: 0.3...0.8)
+    { _ in }
+    let length = try await AVURLAsset(url: mp4).load(.duration).seconds
+    #expect(abs(length - 0.5) < 0.15, "\(length)")
+
+    let gif = try await VideoConverter.convert(source, to: .gif, size: .original, range: 0.3...0.8)
+    { _ in }
+    let frames = CGImageSourceGetCount(try #require(CGImageSourceCreateWithURL(gif as CFURL, nil)))
+    #expect(frames == 5)
   }
 }

@@ -1,9 +1,10 @@
 // 视频转换（M6）：一段视频转成 MP4（H.264）、MP4（HEVC）、动图 GIF，或只要声音（M4A）；能缩到 1080p / 720p / 480p
 // （按短边算，只缩不放）。结果放在原视频旁边、换扩展名，重名加「 2」，原视频不动。
 // - MP4：系统的导出会话（最高质量预设，H.264 或 HEVC），要缩小时加一个视频合成按比例缩每一帧；声音一起转。
-// - GIF：每秒 10 帧、长边最多 480、最多取前 15 秒（ponytail: GIF 没有帧间压缩，再长再大文件就上百 MB；要更长换 MP4），
+// - GIF：每秒 10 帧、长边最多 480、最多取 15 秒（选了一段就从那一段的开头取）（ponytail: GIF 没有帧间压缩，再长再大文件就上百 MB；要更长换 MP4），
 //   一直循环。
 // - M4A：系统的「Apple M4A」预设，只留声音；没有声音的视频说一声。
+// 能只转一段（range，秒：视频转换页上用播放器自带的剪辑条选的）；GIF 从那一段的开头取，最多 15 秒。
 // 进度在后台线程上报 0–1；任务被取消时停下、删掉写了一半的文件。
 
 import AVFoundation
@@ -58,7 +59,7 @@ nonisolated enum VideoConverter {
     }
   }
 
-  /// GIF：每秒几帧、长边最多多少、最多取前几秒
+  /// GIF：每秒几帧、长边最多多少、最多取几秒
   static let gifFrameRate = 10.0
   static let gifMaxSide = 480.0
   static let gifMaxSeconds = 15.0
@@ -69,16 +70,17 @@ nonisolated enum VideoConverter {
   }
 
   @concurrent static func convert(
-    _ source: URL, to target: Target, size: Size,
+    _ source: URL, to target: Target, size: Size, range: ClosedRange<Double>? = nil,
     progress: @escaping @Sendable (Double) -> Void
   ) async throws -> URL {
     let asset = AVURLAsset(url: source)
     let output = output(for: source, target: target)
     do {
       switch target {
-      case .gif: try await gif(asset, to: output, progress: progress)
+      case .gif: try await gif(asset, range: range, to: output, progress: progress)
       case .h264, .hevc, .audio:
-        try await export(asset, target: target, size: size, to: output, progress: progress)
+        try await export(
+          asset, target: target, size: size, range: range, to: output, progress: progress)
       }
     } catch {
       try? FileManager.default.removeItem(at: output)
@@ -99,7 +101,7 @@ nonisolated enum VideoConverter {
   // MARK: MP4、M4A
 
   private static func export(
-    _ asset: AVURLAsset, target: Target, size: Size, to output: URL,
+    _ asset: AVURLAsset, target: Target, size: Size, range: ClosedRange<Double>?, to output: URL,
     progress: @escaping @Sendable (Double) -> Void
   ) async throws {
     let preset: String
@@ -139,6 +141,11 @@ nonisolated enum VideoConverter {
         session.videoComposition = scaling
       }
     }
+    if let range {
+      session.timeRange = CMTimeRange(
+        start: CMTime(seconds: range.lowerBound, preferredTimescale: 600),
+        end: CMTime(seconds: range.upperBound, preferredTimescale: 600))
+    }
     // 只把进度的序列带进任务：会话本身不是 Sendable
     let updates = session.states(updateInterval: 0.2)
     let watcher = Task {
@@ -160,13 +167,17 @@ nonisolated enum VideoConverter {
   // MARK: GIF
 
   private static func gif(
-    _ asset: AVURLAsset, to output: URL, progress: @escaping @Sendable (Double) -> Void
+    _ asset: AVURLAsset, range: ClosedRange<Double>?, to output: URL,
+    progress: @escaping @Sendable (Double) -> Void
   ) async throws {
     guard try await !asset.loadTracks(withMediaType: .video).isEmpty else { throw Failure.noVideo }
-    let seconds = min(try await asset.load(.duration).seconds, gifMaxSeconds)
+    let start = range?.lowerBound ?? 0
+    var end = range?.upperBound ?? 0
+    if range == nil { end = try await asset.load(.duration).seconds }
+    let seconds = min(end - start, gifMaxSeconds)
     let count = max(Int(seconds * gifFrameRate), 1)
     let times = (0..<count).map {
-      CMTime(seconds: Double($0) / gifFrameRate, preferredTimescale: 600)
+      CMTime(seconds: start + Double($0) / gifFrameRate, preferredTimescale: 600)
     }
     let generator = AVAssetImageGenerator(asset: asset)
     generator.appliesPreferredTrackTransform = true

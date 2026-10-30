@@ -10,7 +10,10 @@ import Testing
 
 /// 造一段 160 × 120（可以给别的大小）、10 帧、1 秒的视频：蓝底，右上角 (120, 8) 起 30 × 16 的白块当台标
 /// （截图自检、视频转换也用）
-func makeTestVideo(at url: URL, width: Int = 160, height: Int = 120) async throws {
+/// firstAt：第一帧放在几秒（有的视频能显示的第一帧不在 0）
+func makeTestVideo(
+  at url: URL, width: Int = 160, height: Int = 120, firstAt: Double = 0
+) async throws {
   let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
   let input = AVAssetWriterInput(
     mediaType: .video,
@@ -45,7 +48,10 @@ func makeTestVideo(at url: URL, width: Int = 160, height: Int = 120) async throw
     }
     CVPixelBufferUnlockBaseAddress(pixels, [])
     #expect(
-      adaptor.append(pixels, withPresentationTime: CMTime(value: Int64(frame), timescale: 10)))
+      adaptor.append(
+        pixels,
+        withPresentationTime: CMTime(seconds: firstAt + Double(frame) / 10, preferredTimescale: 600)
+      ))
   }
   input.markAsFinished()
   await writer.finishWriting()
@@ -184,5 +190,16 @@ struct VideoDelogoTests {
     #expect(after.codec == before.codec)
     // 重新编码过的话字节数几乎不可能一样
     #expect(after.bytes == before.bytes)
+  }
+
+  /// 能显示的第一帧在 0.033 秒（用户的 tonight.mp4 就是这样）：照样读得出第一帧（原来卡死在 0 上读不出、一直转圈）
+  @Test func firstFrameNotAtZero() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "kittybox-tests-\(UUID())")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "晚一点.mp4")
+    try await makeTestVideo(at: source, firstAt: 0.033)
+    let frame = try await VideoDelogo.firstFrame(of: source)
+    #expect(frame.width == 160 && frame.height == 120)
   }
 }

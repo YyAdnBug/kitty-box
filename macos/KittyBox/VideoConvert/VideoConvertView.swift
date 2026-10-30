@@ -1,5 +1,5 @@
-// 视频转换页（M6）：拖进（⌘V 粘贴、⌘O 添加）一批视频 → 右边选项栏选转成什么（MP4 H.264 / HEVC、GIF、只要声音）、
-// 缩到多大 → 页头「转换」，一个一个转（视频编码器就那么几路，一起转不见得快），每个有进度，能停下。
+// 视频转换页（M6；M8 加预览和剪一段）：拖进（⌘V 粘贴、⌘O 添加）一批视频 → 上半是选中那个的预览（VideoPreview：播放、
+// 「剪一段…」只转选的那一段）→ 右边选项栏选转成什么（MP4 H.264 / HEVC、GIF、只要声音）、缩到多大 → 页头「转换」，一个一个转（视频编码器就那么几路，一起转不见得快），每个有进度，能停下。
 // 表格列时长、尺寸、大小、转换后的大小和差多少；右键打开 / 在访达中显示 / 移除，空格快速查看，做好的能拖出去。
 
 import AVFoundation
@@ -26,8 +26,13 @@ struct VideoConvertView: View {
       } else {
         Button("转换") {
           let (target, size) = (target, size)
+          // 各自选的那一段（剪一段…），按原文件对上
+          let trims = Dictionary(
+            model.items.compactMap { item in item.trim.map { (item.source, $0) } },
+            uniquingKeysWith: { first, _ in first })
           model.start(lanes: 1) { source, progress in
-            try await VideoConverter.convert(source, to: target, size: size, progress: progress)
+            try await VideoConverter.convert(
+              source, to: target, size: size, range: trims[source], progress: progress)
           }
         }
         .buttonStyle(BrandButtonStyle())
@@ -40,7 +45,13 @@ struct VideoConvertView: View {
           tool: .videoConvert, title: "拖入视频",
           detail: "MOV、MP4、M4V 等；可以一次放一批，一个一个转，转好的放在原视频旁边")
       } else {
-        table
+        VSplitView {
+          if let item = selected {
+            VideoPreview(item: item) { model.setTrim(item.id, $0) }
+              .frame(minHeight: 220, idealHeight: 340, maxHeight: .infinity)
+          }
+          table.frame(minHeight: 120, maxHeight: .infinity)
+        }
       }
     } options: {
       optionGroups
@@ -66,9 +77,19 @@ struct VideoConvertView: View {
           Text(item.source.lastPathComponent).lineLimit(1).truncationMode(.middle)
         }
       }
-      .width(min: 140, ideal: 190)
-      TableColumn("时长") { VideoLengthText(url: $0.source).foregroundStyle(.secondary) }
-        .width(min: 44, ideal: 50)
+      .width(min: 120, ideal: 170)
+      TableColumn("时长") { item in
+        if let trim = item.trim {
+          // 剪过的：写剪下的那一段多长，染品牌粉
+          Label(VideoPreview.clock(trim.upperBound - trim.lowerBound), systemImage: "scissors")
+            .foregroundStyle(Style.brand)
+            .help(
+              "只转 \(VideoPreview.clock(trim.lowerBound)) – \(VideoPreview.clock(trim.upperBound))")
+        } else {
+          VideoLengthText(url: item.source).foregroundStyle(.secondary)
+        }
+      }
+      .width(min: 56, ideal: 70)
       TableColumn("尺寸") { VideoSizeText(url: $0.source).foregroundStyle(.secondary) }
         .width(min: 70, ideal: 84)
       TableColumn("大小") { FileSizeText(url: $0.source).foregroundStyle(.secondary) }
@@ -121,6 +142,11 @@ struct VideoConvertView: View {
     .spacePreview {
       model.items.filter { selection.contains($0.id) }.map { $0.result ?? $0.source }
     }
+  }
+
+  /// 预览放哪一个：选中的那一行，没选就第一个
+  private var selected: FileBatch.Item? {
+    model.items.first { selection.contains($0.id) } ?? model.items.first
   }
 
   @ViewBuilder private var optionGroups: some View {

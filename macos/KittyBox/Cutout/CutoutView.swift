@@ -29,7 +29,9 @@ struct CutoutView: View {
           tool: .cutout, title: "拖入照片",
           detail: "人、动物、商品这类有主体的照片；自动抠出来，背景换成透明或白色，存成「原名-去背景.png」")
       } else {
-        BatchPreview(batch: batch, doneVerb: "存成", checkerboard: background == .transparent)
+        BatchPreview(
+          batch: batch, doneVerb: "存成", checkerboard: background == .transparent,
+          afterLabel: "去背景后")
       }
     } options: {
       OptionGroup(title: "背景", footnote: Text("透明的存成 PNG，放进文档、海报里不带底；白色的适合证件照、商品图。")) {

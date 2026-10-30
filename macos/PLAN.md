@@ -9,7 +9,7 @@
 
 - Swift 6 语言模式，默认 `MainActor` + approachable concurrency；`@concurrent` 只给重活：解压 / 打包的子进程等待、图片编解码、模型推理、视频导出。
 - macOS 15.0，`ARCHS = arm64`；Xcode 工程，构建设置全在 `Config/*.xcconfig`，pbxproj 的 target / project 层保持为空。
-- Apple 框架：SwiftUI、AppKit、ImageIO、Core Image、Core ML、AVFoundation、UniformTypeIdentifiers、QuickLook（M6 加：空格快速查看）。不写 Metal：Xcode 26 起 Metal 工具链要单独下载，每台编译的机器都得装（M3 实测）。
+- Apple 框架：SwiftUI、AppKit、ImageIO、Core Image、Core ML、AVFoundation、UniformTypeIdentifiers、QuickLook（M6 加：空格快速查看）、Vision（M7 加：去背景、找文字水印）、AVKit（M8 加：视频预览和剪辑条）。不写 Metal：Xcode 26 起 Metal 工具链要单独下载，每台编译的机器都得装（M3 实测）。
 - 系统命令（经 `Shell/Subprocess.swift`，进程外）：`/usr/bin/tar`（bsdtar 3.5 / libarchive 3.7）。
 - **第三方：只有一个例外 `7zz`**（2026-10-30 拍板）。另有两份随包的数据文件，都不是代码依赖：LaMa 模型和 Gemini alpha 图。不建 SPM 包，不链接第三方库。
 
@@ -71,6 +71,7 @@
 - 只用 ImageIO：
   - 读取（本机实测）：HEIC、WebP、AVIF、JXL、RAW、PSD、ICO 等；
   - 写出：JPEG、PNG、HEIC、AVIF、TIFF、GIF、BMP、ICO、ICNS、PDF。
+- **预览**（M8，用户问「图片转换也不能预览吗」）：页面上半是选中那张的预览，转好了就是前后对比（右上「转换后」，能放大到 1:1 看画质差多少），下半是表格，中间能拖。
 - 支持批量转换（M5 起按核数几张一起转，最多 4 张：RAW、大图解码吃内存）；JPEG、HEIC、AVIF 有质量滑块（默认 85%）。换了格式、质量、尺寸、定位，转好的那些回到「等待中」。
 - **缩放和定位**（M5）：选项栏「尺寸」：原尺寸 / 长边 3840、2560、1920、1280、800（只缩不放，图标格式不管它；EXIF 里记的像素尺寸跟着改）；「隐私」：去掉定位信息（只去 GPS 那一组，拍摄时间、相机照样带；C3 当时说第一版不加开关）。
 - 结果放在原图旁边、换扩展名，重名加「 2」；拍摄时间、相机、定位这些信息原样带过去（C3）。
@@ -84,7 +85,8 @@
 - 转成：MP4（H.264，哪里都能放）、MP4（HEVC，小一半左右）、动图 GIF、只要声音（M4A）。MP4 / M4A 用系统的导出会话（最高质量预设 / Apple M4A），声音一起转；没有声音的视频转 M4A 说一声。
 - 尺寸（只 MP4）：原尺寸 / 1080p / 720p / 480p，按短边算（横屏 720p 就是高 720，竖屏是宽 720），只缩不放，宽高取偶数；要缩时加一个视频合成按比例缩每一帧。
 - GIF：每秒 10 帧、长边最多 480、最多取前 15 秒，一直循环（`ponytail:` GIF 没有帧间压缩，再长再大就上百 MB；要更长换 MP4）。
-- 结果放在原视频旁边、换扩展名，重名加「 2」。表格列时长、尺寸（转正之后）、大小、转换后的大小和差多少；小图取视频第一帧。
+- 结果放在原视频旁边、换扩展名，重名加「 2」。表格列时长（剪过的写剪下那段多长、染品牌粉）、尺寸（转正之后）、大小、转换后的大小和差多少；小图取视频第一帧。
+- **预览和剪一段**（M8，用户问「转换时不能预览吗」「要不要加截取」）：页面上半是选中那一行的预览，系统的播放器（AVKit `AVPlayerView`，同 QuickTime：播放、拖进度、逐帧），转好的能切到「转换后」看；「剪一段…」打开播放器自带的剪辑条（同 QuickTime 的「修剪」），点「修剪」就只转这一段（存在那一行的 `trim`，导出会话的 `timeRange`；GIF 从这一段的开头取，最多 15 秒——原来只能取前 15 秒）；「不剪了」回到整段；换了一段，转好的那一行回到「等待中」。上下两半中间能拖（`VSplitView`）。
 - 一批文件的列表模型 `FileBatch`（原来叫 ImageBatch）：收什么由页面给（图片 / 视频），几个一起做，每个能报进度，`start` 开始的能 `stop`。
 
 ### AI 水印（M7，原来的「Gemini 角标」）
@@ -119,7 +121,7 @@
 - Gemini 认不出的那一行有「改用画笔擦除」，点了切到画笔擦除并载入那张图；没有替你预先框好右下角（星标的位置随版本变，框大了会多擦）。
 
 ### 视频固定台标
-- 在第一帧（`AVAssetImageGenerator`，按视频方向转正）上拖出台标，可以框几处，框角的 × 删掉一处。框存第一帧的像素坐标。
+- 在第一帧（`AVAssetImageGenerator`，按视频方向转正；往后放宽一秒：不少视频能显示的第一帧不在 0，卡死在 0 上系统回「无法打开」，2026-10-30 用户的 MP4 就是这样，M8 修）上拖出台标，可以框几处，框角的 × 删掉一处。框存第一帧的像素坐标。
 - 导出：`AVMutableVideoComposition.videoComposition(with:applyingCIFiltersWithHandler:)` 逐帧处理，交给 `AVAssetExportSession`，有进度条。编码跟原视频走：HEVC 用 HEVCHighestQuality，其余 HighestQuality（H.264）。
 - 补像素：每帧只把框外 band + 1 圈的小块读回 CPU（`CIContext.render(toBitmap:)`），`VideoDelogo.fill` 按到框外左右上下四条边的距离对边上的像素加权（越近越重），羽化带 4 像素从「全换」过渡到「不换」，再贴回画面。思路同 ffmpeg 的 delogo，代码自己写。
   - 原计划写 Metal 的 Core Image 核，2026-10-30 实测 Xcode 27 没装 Metal 工具链（要 `xcodebuild -downloadComponent MetalToolchain` 另下），为了不给编译多加前提改成这样；只补一小块，CPU 够快。
@@ -234,6 +236,7 @@
   3. 解压：每个包能「看看里面」：列出里面的文件、大小、一共多少（zip 用自己读的中央目录，别的用 7zz l）；
   4. 新工具「视频转换」（侧边栏「转换」组）：一批视频转成 MP4（H.264）、MP4（HEVC）、动图 GIF、只要声音（M4A），可以缩到 1080p / 720p / 480p，一个一个转、有进度和停止；「PDF / 音视频转换」第一版不做的那一条改成只剩 PDF。
 - **M7 修图和设置**（2026-10-30 做完，共 77 个单测；用户看了 M6 提了五条）：页头顶到最上面一排（标题栏透明）；画笔擦除三个补图模型可选（快速 MI-GAN、标准 LaMa、高清 Big LaMa 2048）；新工具「去背景」（Vision 主体识别）；「Gemini 角标」改成通用的「AI 水印」（Gemini 星标 + 文字识别找「AI生成」字样再补）；设置窗口（通用、补图模型）。侧边栏「去水印」组改名「修图」：去背景、AI 水印、画笔擦除、视频台标。白名单加 Vision。**待你手测**：拿真的豆包、即梦等带「AI生成」角标的图试 AI 水印，拿人像、商品照试去背景。
+- **M8 预览和剪辑**（2026-10-30 做完；用户试 M6 的包报了三条）：视频台标读不出 MP4（第一帧不在 0，放宽一秒）、读不出时一直转圈没法退（改成画布上写原因 +「关掉」「换一个」，画笔擦除同样处理）；视频转换加预览播放器和「剪一段」；图片转换加预览和前后对比。白名单加 AVKit。**待你手测**：拿那个 tonight.mp4 再试视频台标；视频转换里剪一段转 GIF；图片转换拖对比线看画质。
 
 ## 6. 第一版不做
 

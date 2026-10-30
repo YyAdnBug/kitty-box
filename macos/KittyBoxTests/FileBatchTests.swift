@@ -65,4 +65,13 @@ struct FileBatchTests {
     }
     #expect(states.dropFirst().allSatisfy { if case .waiting = $0 { true } else { false } })
   }
+
+  @Test func trimResetsDone() {
+    let batch = FileBatch(accepts: { _ in true })
+    let movie = URL(filePath: "/tmp/kittybox-batch/1.mov")
+    batch.items = [.init(source: movie, state: .done(movie))]
+    batch.setTrim(batch.items[0].id, 1...3)
+    #expect(batch.items[0].trim == 1...3)
+    #expect(batch.hasWork)
+  }
 }

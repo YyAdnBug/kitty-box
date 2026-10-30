@@ -33,6 +33,16 @@ import SwiftUI
     }
   }
 
+  /// 关掉这一段（读不出时回到空着的样子）
+  func clear() {
+    source = nil
+    frame = nil
+    resultFrame = nil
+    comparing = false
+    rects = []
+    state = .idle
+  }
+
   func load(_ url: URL) {
     source = url
     frame = nil
@@ -103,6 +113,8 @@ struct VideoMarkView: View {
         } else {
           canvas(frame).padding(20)
         }
+      } else if case .failed(let reason) = model.state {
+        LoadFailed(reason: reason, again: "换一个视频…") { model.clear() }
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }

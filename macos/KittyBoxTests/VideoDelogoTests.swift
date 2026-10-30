@@ -1,5 +1,5 @@
 // VideoDelogo：补像素的纯函数（纯色底上框里补回底色、框外不动、羽化带在中间）；再真的造一段带白色台标的小视频，
-// 框上导出，台标那里变回底色、文件名是「原名-去水印」。
+// 框上导出，台标那里变回底色、文件名是「原名-去水印」；带 AAC 音轨的视频导出后音频一包不差（原样搬过去，没重新编码，D6）。
 
 import AVFoundation
 import CoreGraphics
@@ -50,6 +50,62 @@ func makeTestVideo(at url: URL) async throws {
   input.markAsFinished()
   await writer.finishWriting()
   #expect(writer.status == .completed)
+}
+
+/// 在 makeTestVideo 那段视频上配 1 秒 440 Hz 的 AAC 音轨，合成一个 .mov（音视频都原样拼进去）
+private func makeTestVideoWithSound(at url: URL, in root: URL) async throws {
+  let picture = root.appending(path: "无声.mov")
+  try await makeTestVideo(at: picture)
+  let sound = root.appending(path: "声音.m4a")
+  do {
+    let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+    let file = try AVAudioFile(
+      forWriting: sound,
+      settings: [
+        AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1,
+      ])
+    let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100))
+    buffer.frameLength = 44_100
+    let samples = try #require(buffer.floatChannelData)[0]
+    for index in 0..<44_100 { samples[index] = sin(Float(index) * 2 * .pi * 440 / 44_100) * 0.3 }
+    try file.write(from: buffer)
+  }
+  let mix = AVMutableComposition()
+  let pictureAsset = AVURLAsset(url: picture)
+  let soundAsset = AVURLAsset(url: sound)
+  let range = CMTimeRange(start: .zero, duration: try await pictureAsset.load(.duration))
+  let video = try #require(
+    mix.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid))
+  try video.insertTimeRange(
+    range, of: try #require(try await pictureAsset.loadTracks(withMediaType: .video).first),
+    at: .zero)
+  let audio = try #require(
+    mix.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid))
+  let soundRange = CMTimeRange(
+    start: .zero, duration: min(try await soundAsset.load(.duration), range.duration))
+  try audio.insertTimeRange(
+    soundRange, of: try #require(try await soundAsset.loadTracks(withMediaType: .audio).first),
+    at: .zero)
+  let session = try #require(
+    AVAssetExportSession(asset: mix, presetName: AVAssetExportPresetPassthrough))
+  try await session.export(to: url, as: .mov)
+}
+
+/// 音轨的编码和全部压缩包的字节数（不解码，原样读）
+private func audioPackets(of url: URL) async throws -> (codec: FourCharCode, bytes: Int) {
+  let asset = AVURLAsset(url: url)
+  let track = try #require(try await asset.loadTracks(withMediaType: .audio).first)
+  let codec = try #require(
+    try await track.load(.formatDescriptions).first.map(CMFormatDescriptionGetMediaSubType))
+  let reader = try AVAssetReader(asset: asset)
+  let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+  reader.add(output)
+  #expect(reader.startReading())
+  var bytes = 0
+  while let buffer = output.copyNextSampleBuffer() {
+    bytes += CMSampleBufferGetTotalSampleSize(buffer)
+  }
+  return (codec, bytes)
 }
 
 struct VideoDelogoTests {
@@ -111,5 +167,22 @@ struct VideoDelogoTests {
     let logo = rgb(after, 135, 15)
     // 有损编码：和底色差不多就算补上了
     #expect(zip(logo, background).allSatisfy { abs($0 - $1) < 24 }, "\(logo) vs \(background)")
+  }
+
+  @Test func audioIsCopiedAsIs() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "kittybox-tests-\(UUID())")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "带声音.mov")
+    try await makeTestVideoWithSound(at: source, in: root)
+
+    let output = try await VideoDelogo.export(
+      source, rects: [CGRect(x: 118, y: 6, width: 34, height: 20)], progress: { _ in })
+    let before = try await audioPackets(of: source)
+    let after = try await audioPackets(of: output)
+    #expect(before.codec == kAudioFormatMPEG4AAC)
+    #expect(after.codec == before.codec)
+    // 重新编码过的话字节数几乎不可能一样
+    #expect(after.bytes == before.bytes)
   }
 }

@@ -1,8 +1,10 @@
 // 视频固定台标（D4–D6）：在第一帧上框出台标（可以框几处），AVFoundation 逐帧交给 Core Image；每一帧只把框外一圈的小块读回来，
 // 框里的每个像素按到框外左右上下四条边的距离、对边上紧挨着的像素加权补上（越近越重，思路同 ffmpeg 的 delogo，代码自己写），
-// 框外再留一圈羽化带慢慢过渡，贴回画面。导出编码跟原视频走（HEVC 出 HEVC，其余 H.264），结果「原名-去水印」放在原视频旁边。
+// 框外再留一圈羽化带慢慢过渡，贴回画面。结果「原名-去水印」放在原视频旁边。
+// 导出（D6）：AVAssetReader 按视频合成读出补好的帧、AVAssetWriter 重新编码，编码跟原视频走（HEVC 出 HEVC，其余 H.264），
+// 码率按原视频的 1.25 倍（再编一次会丢一点细节，多给一点码率补回来，体积和原来差不多）；音频一包一包原样搬过去、不重新编码
+// （容器装不下原来的音频格式时才转成 AAC）；视频的元数据（拍摄时间、地点…）带过去。不用导出会话：它没法只重编视频、音频原样带。
 // 不用 Metal 写 Core Image 核：Xcode 26 起 Metal 工具链要单独下载，每台编译的机器都得装（2026-10-30 实测）；只补一小块，CPU 够快。
-// ponytail: 导出会话会把音频也重新编码成 AAC（高质量，听不出来）；要原样带过音频，得换成 AVAssetReader / Writer 自己搬
 
 import AVFoundation
 import CoreImage
@@ -115,34 +117,111 @@ nonisolated enum VideoDelogo {
       request.finish(with: output.cropped(to: frame.extent), context: context)
     }
 
-    let codec = try await track.load(.formatDescriptions).first.map(
-      CMFormatDescriptionGetMediaSubType)
-    let preset =
-      codec == kCMVideoCodecType_HEVC
-      ? AVAssetExportPresetHEVCHighestQuality : AVAssetExportPresetHighestQuality
-    guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
-      throw Failure.exportFailed("不支持这个视频。")
-    }
-    session.videoComposition = composition
     let ext = source.pathExtension.lowercased()
     let type: AVFileType = ext == "mp4" ? .mp4 : ext == "m4v" ? .m4v : .mov
     let target = source.deletingPathExtension()
       .appendingPathExtension(type == .mov ? "mov" : ext).adding("-去水印").uniqued()
-
-    // 只把进度的序列带进任务：会话本身不是 Sendable
-    let updates = session.states(updateInterval: 0.2)
-    let watcher = Task {
-      for await state in updates {
-        if case .exporting(let step) = state { progress(step.fractionCompleted) }
-      }
-    }
-    defer { watcher.cancel() }
     do {
-      try await session.export(to: target, as: type)
+      try await write(asset, video: track, composition: composition, to: target, as: type) {
+        progress($0)
+      }
     } catch {
       try? FileManager.default.removeItem(at: target)
       throw Failure.exportFailed(error.localizedDescription)
     }
     return target
+  }
+
+  /// 读出补好的帧重新编码，音频原样搬；一边搬一边报进度（按视频帧的时间）
+  private static func write(
+    _ asset: AVURLAsset, video track: AVAssetTrack, composition: AVVideoComposition,
+    to target: URL, as type: AVFileType, progress: (Double) -> Void
+  ) async throws {
+    let reader = try AVAssetReader(asset: asset)
+    let writer = try AVAssetWriter(outputURL: target, fileType: type)
+    writer.metadata = (try? await asset.load(.metadata)) ?? []
+
+    let frames = AVAssetReaderVideoCompositionOutput(
+      videoTracks: [track],
+      videoSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+    frames.videoComposition = composition
+    reader.add(frames)
+    let codec = try await track.load(.formatDescriptions).first.map(
+      CMFormatDescriptionGetMediaSubType)
+    // ponytail: 码率按原视频的 1.25 倍估；要逐帧保真再换成按质量编码
+    let rate = try await track.load(.estimatedDataRate)
+    let picture = AVAssetWriterInput(
+      mediaType: .video,
+      outputSettings: [
+        AVVideoCodecKey: codec == kCMVideoCodecType_HEVC
+          ? AVVideoCodecType.hevc : AVVideoCodecType.h264,
+        AVVideoWidthKey: Int(composition.renderSize.width),
+        AVVideoHeightKey: Int(composition.renderSize.height),
+        AVVideoCompressionPropertiesKey: [
+          AVVideoAverageBitRateKey: max(Int(Double(rate) * 1.25), 2_000_000)
+        ],
+      ])
+    picture.expectsMediaDataInRealTime = false
+    writer.add(picture)
+    var pairs: [(output: AVAssetReaderOutput, input: AVAssetWriterInput)] = [(frames, picture)]
+
+    for audio in try await asset.loadTracks(withMediaType: .audio) {
+      let packets = AVAssetReaderTrackOutput(track: audio, outputSettings: nil)
+      let hint = try await audio.load(.formatDescriptions).first
+      var sound = AVAssetWriterInput(mediaType: .audio, outputSettings: nil, sourceFormatHint: hint)
+      if !writer.canAdd(sound) {
+        // 容器装不下原来的音频格式（比如 mp4 里放不了某些 PCM）：解出来转成 AAC
+        let decoded = AVAssetReaderTrackOutput(
+          track: audio, outputSettings: [AVFormatIDKey: kAudioFormatLinearPCM])
+        sound = AVAssetWriterInput(
+          mediaType: .audio,
+          outputSettings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000,
+            AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 256_000,
+          ])
+        guard reader.canAdd(decoded), writer.canAdd(sound) else { continue }
+        reader.add(decoded)
+        writer.add(sound)
+        pairs.append((decoded, sound))
+        continue
+      }
+      guard reader.canAdd(packets) else { continue }
+      reader.add(packets)
+      writer.add(sound)
+      pairs.append((packets, sound))
+    }
+
+    guard reader.startReading() else { throw reader.error ?? Failure.exportFailed("读不了这段视频。") }
+    guard writer.startWriting() else { throw writer.error ?? Failure.exportFailed("写不了结果。") }
+    writer.startSession(atSourceTime: .zero)
+    let duration = try await asset.load(.duration).seconds
+
+    // 轮流往各条轨道里搬：哪条能收就搬一包，搬完了就收尾；都收不下时等一下（写入的一方在编码）
+    while !pairs.isEmpty {
+      try Task.checkCancellation()
+      var moved = false
+      for index in pairs.indices.reversed() where pairs[index].input.isReadyForMoreMediaData {
+        let (output, input) = pairs[index]
+        moved = true
+        guard let buffer = output.copyNextSampleBuffer() else {
+          input.markAsFinished()
+          pairs.remove(at: index)
+          continue
+        }
+        guard input.append(buffer) else {
+          reader.cancelReading()
+          throw writer.error ?? Failure.exportFailed("写不进去。")
+        }
+        if input === picture, duration > 0 {
+          progress(min(CMSampleBufferGetPresentationTimeStamp(buffer).seconds / duration, 1))
+        }
+      }
+      if !moved { try await Task.sleep(for: .milliseconds(2)) }
+    }
+    if reader.status == .failed { throw reader.error ?? Failure.exportFailed("读到一半出错了。") }
+    await writer.finishWriting()
+    if writer.status != .completed {
+      throw writer.error ?? Failure.exportFailed("写到一半出错了。")
+    }
   }
 }

@@ -95,8 +95,11 @@ enum Archiver {
       windowsProblems: WindowsNames.problems(in: files))
   }
 
-  /// 打好的包放在 plan.base 里，重名加「 2」
-  static func pack(_ plan: PackPlan, options: PackOptions) async throws -> URL {
+  /// 打好的包放在 plan.base 里，重名加「 2」。progress 报 0–1（7zz 的 -bsp1 百分比）；任务被取消时停掉 7zz、删掉打了一半的包，
+  /// 抛 CancellationError
+  static func pack(
+    _ plan: PackPlan, options: PackOptions, progress: @escaping (Double) -> Void = { _ in }
+  ) async throws -> URL {
     if let problem = passwordProblem(options) { throw Failure.failed(problem) }
     let archive = plan.base.appending(path: archiveName(for: plan.items, format: options.format))
       .uniqued()
@@ -105,7 +108,7 @@ enum Archiver {
     try plan.files.joined(separator: "\n").write(to: list, atomically: true, encoding: .utf8)
     defer { try? FileManager.default.removeItem(at: list) }
     var arguments = [
-      "a", "-t\(options.format == .zip ? "zip" : "7z")", "-snl", "-scsUTF-8", "-bso0", "-bsp0",
+      "a", "-t\(options.format == .zip ? "zip" : "7z")", "-snl", "-scsUTF-8", "-bso0", "-bsp1",
       archive.path, "@" + list.path,
     ]
     if !options.password.isEmpty {
@@ -115,9 +118,11 @@ enum Archiver {
           ? "-mhe=on" : "-mem=" + (options.windowsCompatible ? "ZipCrypto" : "AES256"))
     }
     let result = try await Subprocess.run(
-      sevenZip, arguments, captures: true, quality: .userInitiated, directory: plan.base)
-    guard result.status == 0 else {
+      sevenZip, arguments, captures: true, quality: .userInitiated, directory: plan.base,
+      watch: { if let percent = lastPercent(in: $0) { progress(percent) } })
+    guard result.status == 0, !Task.isCancelled else {
       try? FileManager.default.removeItem(at: archive)
+      try Task.checkCancellation()
       throw Failure.failed("打包没成功：" + summary(of: result))
     }
     return archive
@@ -125,8 +130,12 @@ enum Archiver {
 
   // MARK: 解压
 
-  /// 解到压缩包旁边：包里只有一样东西时直接放出来，不然放进和包同名的文件夹（B8）。重名加「 2」
-  static func unpack(_ archive: URL, password: String = "") async throws -> URL {
+  /// 解到压缩包旁边：包里只有一样东西时直接放出来，不然放进和包同名的文件夹（B8）。重名加「 2」。
+  /// progress 报 0–1：7zz 的 -bsp1 百分比；zip 按 tar -v 解出来的条数 / 中央目录里的条数；别的 tar 一族不知道总数、不报。
+  /// 任务被取消时停掉子进程、删掉解了一半的文件夹，抛 CancellationError
+  static func unpack(
+    _ archive: URL, password: String = "", progress: @escaping (Double) -> Void = { _ in }
+  ) async throws -> URL {
     let parent = archive.deletingLastPathComponent()
     let name = folderName(for: archive)
     let work = parent.appending(path: ".\(name) 解压中").uniqued()
@@ -137,19 +146,33 @@ enum Archiver {
       let result: Subprocess.Result
       let wrongPassword: Bool
       if usesTar(archive) {
-        var arguments = ["-xf", archive.path, "-C", work.path, "--passphrase", given]
-        if ZipNames.isZip(archive) {
-          let charset = ZipNames.charset(of: archive) ?? .utf8
-          arguments += ["--options", "hdrcharset=" + charset.rawValue]
+        var arguments = ["-xvf", archive.path, "-C", work.path, "--passphrase", given]
+        let entries = ZipNames.isZip(archive) ? ZipNames.entries(of: archive) : nil
+        if let entries {
+          arguments += ["--options", "hdrcharset=" + ZipNames.charset(for: entries).rawValue]
         }
-        result = try await Subprocess.run(tar, arguments, captures: true, quality: .userInitiated)
-        wrongPassword = result.error.contains("Incorrect passphrase")
+        // tar -v 每解出一条在标准错误写一行
+        var done = 0
+        let total = entries?.count ?? 0
+        result = try await Subprocess.run(
+          tar, arguments, captures: true, quality: .userInitiated,
+          watch: { text in
+            done += text.count { $0 == "\n" }
+            if total > 0 { progress(min(Double(done) / Double(total), 1)) }
+          })
+        // ZipCrypto 的密码只校验一个字节：错的密码有 1/256 混过校验，解到一半才因为数据对不上失败，报的不是「密码不对」。
+        // 加了密的 zip 解不成就当密码不对（ponytail: 真坏了的加密包也会这么说）
+        wrongPassword =
+          result.error.contains("Incorrect passphrase")
+          || entries?.contains(where: \.encrypted) == true
       } else {
         result = try await Subprocess.run(
-          sevenZip, ["x", "-y", "-bso0", "-bsp0", "-o" + work.path, "-p" + given, archive.path],
-          captures: true, quality: .userInitiated)
+          sevenZip, ["x", "-y", "-bso0", "-bsp1", "-o" + work.path, "-p" + given, archive.path],
+          captures: true, quality: .userInitiated,
+          watch: { if let percent = lastPercent(in: $0) { progress(percent) } })
         wrongPassword = (result.output + result.error).contains("Wrong password")
       }
+      try Task.checkCancellation()
       if result.status != 0 {
         if wrongPassword { throw password.isEmpty ? Failure.needsPassword : Failure.wrongPassword }
         throw Failure.failed("解压没成功：" + summary(of: result))
@@ -263,6 +286,11 @@ enum Archiver {
 
   nonisolated private static func isDirectory(_ attributes: [FileAttributeKey: Any]?) -> Bool {
     attributes?[.type] as? FileAttributeType == .typeDirectory
+  }
+
+  /// 7zz -bsp1 的进度：「 32% 6 + 名字」这样的片段用退格隔开，取最后一个百分数
+  nonisolated static func lastPercent(in text: String) -> Double? {
+    text.matches(of: /(\d{1,3})%/).last.flatMap { Double($0.output.1) }.map { min($0 / 100, 1) }
   }
 
   /// 给人看的出错原因：工具最后一行有内容的输出

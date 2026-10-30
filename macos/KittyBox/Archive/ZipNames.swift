@@ -13,6 +13,8 @@ nonisolated enum ZipNames {
   struct Entry {
     var name: Data
     var utf8Flag: Bool
+    /// 标志位第 0 位：这一条加了密（ZipCrypto 或 AES）
+    var encrypted = false
   }
 
   /// 是不是 zip：开头是本地文件头 PK\3\4，空包是结尾记录 PK\5\6
@@ -81,7 +83,7 @@ nonisolated enum ZipNames {
     return parse(directory, count: count)
   }
 
-  /// 中央目录里一条一条的文件头（PK\1\2）：+8 标志位（第 11 位是 UTF-8），+28 / +30 / +32 名字、扩展、注释长度，+46 起是名字
+  /// 中央目录里一条一条的文件头（PK\1\2）：+8 标志位（第 0 位加密，第 11 位是 UTF-8），+28 / +30 / +32 名字、扩展、注释长度，+46 起是名字
   static func parse(_ directory: [UInt8], count: UInt64) -> [Entry]? {
     var entries: [Entry] = []
     var offset = 0
@@ -93,7 +95,8 @@ nonisolated enum ZipNames {
       entries.append(
         Entry(
           name: Data(directory[offset + 46..<offset + 46 + nameLength]),
-          utf8Flag: directory.u16(offset + 8) & 0x0800 != 0))
+          utf8Flag: directory.u16(offset + 8) & 0x0800 != 0,
+          encrypted: directory.u16(offset + 8) & 0x0001 != 0))
       offset += skip
     }
     return entries

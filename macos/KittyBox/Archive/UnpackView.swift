@@ -22,6 +22,8 @@ import UniformTypeIdentifiers
     let archive: URL
     var state = State.waiting
     var password = ""
+    /// 正在解时的进度 0–1；还不知道（tar.gz 这类没有总数）时是 nil
+    var progress: Double?
 
     /// 解完了或没解成（不会再自己动）
     var isFinished: Bool {
@@ -36,6 +38,8 @@ import UniformTypeIdentifiers
 
   var jobs: [Job] = []
   private var worker: Task<Void, Never>?
+  /// 正在解的那一个和它的任务（「停止」取消它，接着解下一个）
+  private var current: (id: Job.ID, task: Task<URL, any Error>)?
 
   func add(_ urls: [URL]) {
     let busy = Set(jobs.filter { if case .done = $0.state { false } else { true } }.map(\.archive))
@@ -67,15 +71,31 @@ import UniformTypeIdentifiers
     jobs.first { if case .needsPassword = $0.state { true } else { false } }?.id
   }
 
+  /// 停下正在解的这一个：子进程停掉、解了一半的文件夹删掉，这一行写「已停止」，能重试
+  func stop(_ id: Job.ID) {
+    if current?.id == id { current?.task.cancel() }
+  }
+
   /// 一个接一个解（同时解好几个大包只会互相抢磁盘）
   private func start() {
     guard worker == nil else { return }
     worker = Task {
       while let job = jobs.first(where: { if case .waiting = $0.state { true } else { false } }) {
-        update(job.id) { $0.state = .running }
+        update(job.id) {
+          $0.state = .running
+          $0.progress = nil
+        }
+        let task = Task {
+          try await Archiver.unpack(job.archive, password: job.password) { fraction in
+            self.update(job.id) { $0.progress = fraction }
+          }
+        }
+        current = (job.id, task)
         let state: Job.State
         do {
-          state = .done(try await Archiver.unpack(job.archive, password: job.password))
+          state = .done(try await task.value)
+        } catch is CancellationError {
+          state = .failed("已停止")
         } catch Archiver.Failure.needsPassword {
           state = .needsPassword(again: false)
         } catch Archiver.Failure.wrongPassword {
@@ -83,6 +103,7 @@ import UniformTypeIdentifiers
         } catch {
           state = .failed(error.localizedDescription)
         }
+        current = nil
         update(job.id) { $0.state = state }
       }
       worker = nil
@@ -150,7 +171,7 @@ struct UnpackView: View {
       TableColumn("大小") { FileSizeText(url: $0.archive).foregroundStyle(.secondary) }
         .width(min: 60, ideal: 80)
       TableColumn("状态") { job in
-        JobStatus(job: job) { asking = job.id }
+        JobStatus(job: job, askPassword: { asking = job.id }, stop: { model.stop(job.id) })
       }
       .width(min: 240, ideal: 420)
     }
@@ -158,6 +179,9 @@ struct UnpackView: View {
       Button("在访达中显示") {
         let urls = ids.compactMap { id in job(id).map { $0.result ?? $0.archive } }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
+      }
+      if ids.contains(where: { if case .running = job($0)?.state { true } else { false } }) {
+        Button("停止") { for id in ids { model.stop(id) } }
       }
       if ids.contains(where: { job($0)?.isFinished == true && job($0)?.result == nil }) {
         Button("重试") { for id in ids { model.retry(id) } }
@@ -202,16 +226,15 @@ struct UnpackView: View {
 private struct JobStatus: View {
   let job: UnpackModel.Job
   let askPassword: () -> Void
+  let stop: () -> Void
 
   var body: some View {
     switch job.state {
     case .waiting:
       Label("等待中", systemImage: "clock").foregroundStyle(.secondary)
     case .running:
-      HStack(spacing: 6) {
-        ProgressView().controlSize(.mini)
-        Text("正在解压…").foregroundStyle(.secondary)
-      }
+      RunningProgress(label: "正在解压", value: job.progress, stop: stop)
+        .foregroundStyle(.secondary)
     case .done(let url):
       DoneLine(text: "解到「\(url.lastPathComponent)」", url: url)
     case .needsPassword(let again):

@@ -1,5 +1,6 @@
 // Archiver：真的调包里的 7zz 和系统 tar，在临时目录里各跑一遍往返——zip / 7z、带密码和不带、ZipCrypto、
-// GBK 名字的 zip、忽略清单和空文件夹、解压时去掉杂文件、只有一样东西时不多套一层、隔离标记跟着走；外加名字的纯函数。
+// GBK 名字的 zip、忽略清单和空文件夹、解压时去掉杂文件、只有一样东西时不多套一层、隔离标记跟着走、
+// 打包报进度、半路停下不留半个包；外加名字和进度解析的纯函数。
 
 import CoreServices
 import Foundation
@@ -105,6 +106,7 @@ struct ArchiverTests {
       plan, options: .init(format: format, password: password, windowsCompatible: windowsCompatible)
     )
     let moved = try box.moveToOut(archive)
+    if format == .zip { #expect(ZipNames.entries(of: moved)?.allSatisfy(\.encrypted) == true) }
 
     await #expect(throws: Archiver.Failure.needsPassword) { try await Archiver.unpack(moved) }
     await #expect(throws: Archiver.Failure.wrongPassword) {
@@ -113,6 +115,33 @@ struct ArchiverTests {
     let result = try await Archiver.unpack(moved, password: password)
     #expect(try String(contentsOf: result, encoding: .utf8) == "secret")
     #expect(result.lastPathComponent == "机密.txt")
+  }
+
+  /// 打一个大包：边打边报进度，报了之后停下来，7zz 停掉、打了一半的包删掉
+  @Test func packReportsProgressAndStops() async throws {
+    let box = try Sandbox()
+    let noise = try #require(FileHandle(forReadingAtPath: "/dev/urandom"))
+    _ = try box.folder("大")
+    for index in 1...4 {
+      try noise.readData(ofLength: 40_000_000).write(to: box.root.appending(path: "大/\(index).bin"))
+    }
+    let plan = await Archiver.plan([box.root.appending(path: "大")], rules: rules)
+    var reported: [Double] = []
+    let packing = Task {
+      try await Archiver.pack(plan, options: .init(format: .sevenZip)) { reported.append($0) }
+    }
+    for _ in 0..<100 where reported.isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+    #expect(!reported.isEmpty)
+    packing.cancel()
+    await #expect(throws: CancellationError.self) { try await packing.value }
+    #expect(!box.exists("大.7z"))
+  }
+
+  @Test func percentFromSevenZipProgress() {
+    #expect(
+      Archiver.lastPercent(in: "  0M Scan\u{8}\u{8}  0%\u{8}\u{8} 32% 6 + big/f6.bin\u{8} 65% 6")
+        == 0.65)
+    #expect(Archiver.lastPercent(in: "  0M Scan") == nil)
   }
 
   /// 7zz 打 zip 不收中文密码：先拦下来说清楚，不去跑 7zz

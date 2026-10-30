@@ -14,7 +14,10 @@ import UniformTypeIdentifiers
   var plan: Archiver.PackPlan?
   var password = ""
   private(set) var running = false
+  /// 打包进度 0–1；还不知道时是 nil
+  private(set) var progress: Double?
   private(set) var result: Result<URL, any Error>?
+  private var task: Task<Void, Never>?
   let ignore = IgnoreList()
 
   func add(_ urls: [URL]) {
@@ -33,16 +36,27 @@ import UniformTypeIdentifiers
       + ignore.custom
   }
 
-  func pack(_ options: Archiver.PackOptions) async {
+  func pack(_ options: Archiver.PackOptions) {
     guard let plan, !running else { return }
     running = true
-    defer { running = false }
-    do {
-      result = .success(try await Archiver.pack(plan, options: options))
-    } catch {
-      result = .failure(error)
+    progress = nil
+    result = nil
+    task = Task {
+      do {
+        result = .success(try await Archiver.pack(plan, options: options) { self.progress = $0 })
+      } catch is CancellationError {
+        result = nil
+      } catch {
+        result = .failure(error)
+      }
+      running = false
+      progress = nil
+      task = nil
     }
   }
+
+  /// 停下来：7zz 停掉、打了一半的包删掉
+  func stop() { task?.cancel() }
 }
 
 struct PackView: View {
@@ -66,7 +80,7 @@ struct PackView: View {
       Button("移除", systemImage: "minus") { model.remove(selection) }
         .help("移除选中的（⌫）")
         .disabled(selection.isEmpty || model.running)
-      Button("打包") { Task { await model.pack(options) } }
+      Button("打包") { model.pack(options) }
         .buttonStyle(BrandButtonStyle())
         .keyboardShortcut(.defaultAction)
         .disabled(
@@ -138,8 +152,7 @@ struct PackView: View {
     }
     Spacer(minLength: 8)
     if model.running {
-      ProgressView().controlSize(.mini)
-      Text("正在打包…")
+      RunningProgress(label: "正在打包", value: model.progress) { model.stop() }
     }
   }
 

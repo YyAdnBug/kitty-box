@@ -1,5 +1,5 @@
-// 打包页（B2–B6、B10、B11）：拖进（或 ⌘V 粘贴、⌘O 添加）要打包的东西 → 右边「选项」里选 zip / 7z、设不设密码、看忽略清单
-// （勾、加、删，改了就记住）→ 工具栏「打包」，包放在原文件旁边。
+// 打包页（B2–B6、B10、B11）：拖进（或 ⌘V 粘贴、⌘O 添加）要打包的东西 → 右边选项栏里选 zip / 7z、设不设密码、看忽略清单
+// （勾、加、删，改了就记住）→ 页头「打包」，包放在原文件旁边。
 // 中间是表格（名称、种类、大小，右键在访达中显示 / 移除，⌫ 移除）；底下状态栏写「N 项 · 打包 N 个文件 · 忽略 M 项」，
 // 点「查看」看忽略了哪些、哪些文件名 Windows 不认。空着时整页是拖放区。
 
@@ -49,7 +49,6 @@ struct PackView: View {
   @Bindable var model: PackModel
   @AppStorage(Prefs.packFormat) private var format = Archiver.Format.zip
   @AppStorage(Prefs.packWindowsCompatible) private var windowsCompatible = false
-  @AppStorage(Prefs.showsOptions) private var showsOptions = true
   @State private var selection = Set<URL>()
   @State private var newRule = ""
   @State private var ruleProblem: String?
@@ -61,18 +60,28 @@ struct PackView: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
+    ToolPage(tool: .pack) {
+      Button("添加文件…", systemImage: "plus") { Navigator.shared.importing = true }
+        .help("添加文件（⌘O）")
+      Button("移除", systemImage: "minus") { model.remove(selection) }
+        .help("移除选中的（⌫）")
+        .disabled(selection.isEmpty || model.running)
+      Button("打包") { Task { await model.pack(options) } }
+        .buttonStyle(BrandButtonStyle())
+        .keyboardShortcut(.defaultAction)
+        .disabled(
+          model.plan?.files.isEmpty != false || model.running
+            || Archiver.passwordProblem(options) != nil)
+    } content: {
       if model.items.isEmpty {
         DropZone(tool: .pack, title: "拖入要打包的文件或文件夹", detail: "可以一次放好几个，打好的包放在它们旁边")
       } else {
         table
       }
-      statusBar
-    }
-    .navigationTitle("打包")
-    .toolbar { toolbar }
-    .inspector(isPresented: $showsOptions) {
-      optionsForm.inspectorColumnWidth(min: 280, ideal: 300, max: 380)
+    } options: {
+      optionGroups
+    } status: {
+      status
     }
     .task(id: model.planKey) {
       model.plan = nil
@@ -102,7 +111,7 @@ struct PackView: View {
           (row.url.deletingLastPathComponent().path(percentEncoded: false) as NSString)
             .abbreviatingWithTildeInPath
         )
-        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
       }
     } rows: {
       ForEach(model.items.map(FileRow.init)) { TableRow($0) }
@@ -115,45 +124,22 @@ struct PackView: View {
       for url in urls { NSWorkspace.shared.open(url) }
     }
     .tableStyle(.inset(alternatesRowBackgrounds: false))
+    .scrollContentBackground(.hidden)
     .onDeleteCommand { model.remove(selection) }
-  }
-
-  @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-    ToolbarItemGroup {
-      Button("添加文件", systemImage: "plus") { Navigator.shared.importing = true }
-        .help("添加文件（⌘O）")
-      Button("移除", systemImage: "minus") { model.remove(selection) }
-        .help("移除选中的（⌫）")
-        .disabled(selection.isEmpty || model.running)
-    }
-    ToolbarItem {
-      Button("选项", systemImage: "sidebar.trailing") { showsOptions.toggle() }
-        .help(showsOptions ? "收起选项" : "显示选项")
-    }
-    ToolbarItem(placement: .primaryAction) {
-      Button("打包") { Task { await model.pack(options) } }
-        .buttonStyle(.borderedProminent)
-        .keyboardShortcut(.defaultAction)
-        .disabled(
-          model.plan?.files.isEmpty != false || model.running
-            || Archiver.passwordProblem(options) != nil)
-    }
   }
 
   // MARK: 状态栏
 
-  private var statusBar: some View {
-    StatusBar {
-      switch model.result {
-      case .success(let url): DoneLine(text: "已生成「\(url.lastPathComponent)」", url: url)
-      case .failure(let error): FailLine(reason: error.localizedDescription)
-      case nil: summary
-      }
-    } trailing: {
-      if model.running {
-        ProgressView().controlSize(.mini)
-        Text("正在打包…")
-      }
+  @ViewBuilder private var status: some View {
+    switch model.result {
+    case .success(let url): DoneLine(text: "已生成「\(url.lastPathComponent)」", url: url)
+    case .failure(let error): FailLine(reason: error.localizedDescription)
+    case nil: summary
+    }
+    Spacer(minLength: 8)
+    if model.running {
+      ProgressView().controlSize(.mini)
+      Text("正在打包…")
     }
   }
 
@@ -198,55 +184,51 @@ struct PackView: View {
 
   // MARK: 选项（右边）
 
-  private var optionsForm: some View {
-    Form {
-      Section("格式") {
-        Picker("格式", selection: $format) {
-          Text("zip").tag(Archiver.Format.zip)
-          Text("7z").tag(Archiver.Format.sevenZip)
-        }
-        .pickerStyle(.segmented)
+  @ViewBuilder private var optionGroups: some View {
+    OptionGroup(title: "格式") {
+      Picker("格式", selection: $format) {
+        Text("zip").tag(Archiver.Format.zip)
+        Text("7z").tag(Archiver.Format.sevenZip)
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+    }
+    OptionGroup(
+      title: "密码",
+      footnote: Archiver.passwordProblem(options).map { Text($0).foregroundStyle(.red) }
+        ?? Text(passwordHint)
+    ) {
+      SecureField("密码", text: $model.password, prompt: Text("不设密码"))
+        .textFieldStyle(.roundedBorder)
         .labelsHidden()
-      }
-      Section {
-        SecureField("密码", text: $model.password, prompt: Text("不设密码"))
-          .labelsHidden()
-        if format == .zip, !model.password.isEmpty {
-          Toggle("让 Windows 自带解压也能打开", isOn: $windowsCompatible)
-        }
-      } header: {
-        Text("密码")
-      } footer: {
-        if let problem = Archiver.passwordProblem(options) {
-          Text(problem).font(.caption).foregroundStyle(.red)
-        } else {
-          Text(passwordHint).font(.caption).foregroundStyle(.secondary)
-        }
-      }
-      Section {
-        group("系统杂文件", IgnoreList.system.map(\.pattern))
-        group("开发目录", IgnoreList.developer.map(\.pattern)) {
-          let allOn = IgnoreList.developer.allSatisfy { model.ignore.isOn($0.pattern) }
-          Button(allOn ? "全不勾" : "全部勾上") {
-            for item in IgnoreList.developer { model.ignore.set(item.pattern, on: !allOn) }
-          }
-          .buttonStyle(.link)
-        }
-        group("我加的", model.ignore.custom, removable: true)
-        HStack {
-          TextField("加一条", text: $newRule, prompt: Text("*.log、草稿、build/"))
-            .labelsHidden()
-            .onSubmit(addRule)
-          Button("添加", action: addRule).disabled(newRule.isEmpty)
-        }
-      } header: {
-        Text("忽略这些")
-      } footer: {
-        Text(ruleProblem ?? "改了就记住。按名字匹配，路径里哪一层都算；* 和 ? 可用；以 / 结尾的只认文件夹。")
-          .font(.caption).foregroundStyle(ruleProblem == nil ? Color.secondary : .red)
+      if format == .zip, !model.password.isEmpty {
+        Toggle("让 Windows 自带解压也能打开", isOn: $windowsCompatible)
       }
     }
-    .formStyle(.grouped)
+    OptionGroup(
+      title: "忽略这些",
+      footnote: ruleProblem.map { Text($0).foregroundStyle(.red) }
+        ?? Text("改了就记住。按名字匹配，路径里哪一层都算；* 和 ? 可用；以 / 结尾的只认文件夹。")
+    ) {
+      group("系统杂文件", IgnoreList.system.map(\.pattern))
+      Hairline()
+      group("开发目录", IgnoreList.developer.map(\.pattern)) {
+        let allOn = IgnoreList.developer.allSatisfy { model.ignore.isOn($0.pattern) }
+        Button(allOn ? "全不勾" : "全部勾上") {
+          for item in IgnoreList.developer { model.ignore.set(item.pattern, on: !allOn) }
+        }
+        .buttonStyle(.link)
+      }
+      Hairline()
+      group("我加的", model.ignore.custom, removable: true)
+      HStack {
+        TextField("加一条", text: $newRule, prompt: Text("*.log、草稿、build/"))
+          .textFieldStyle(.roundedBorder)
+          .labelsHidden()
+          .onSubmit(addRule)
+        Button("添加", action: addRule).disabled(newRule.isEmpty)
+      }
+    }
   }
 
   private var passwordHint: String {
@@ -266,7 +248,7 @@ struct PackView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
-        Text(title)
+        Text(title).font(.system(size: 12, weight: .medium))
         Spacer()
         trailing()
       }
@@ -292,7 +274,6 @@ struct PackView: View {
       }
       .controlSize(.small)
     }
-    .padding(.vertical, 2)
   }
 
   private func addRule() {

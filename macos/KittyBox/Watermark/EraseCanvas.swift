@@ -1,5 +1,5 @@
 // 画笔擦除（D2、D3）：拖进一张图，涂住要擦掉的地方，松手就交给 Inpainter 补（照系统照片的「清理」：一笔一擦，不用再点按钮）；
-// ⌘Z 一次退回一笔；满意了点工具栏「存储」，另存成「原名-去水印」，原图不动。
+// ⌘Z 一次退回一笔；满意了点页头「存储」，另存成「原名-去水印」，原图不动。
 // 画布能放大（捏合、⌘= / ⌘-，⌘0 回到适合窗口），放大后用触控板 / 滚轮挪；底下浮着一条控制栏：笔刷大小（[ ] 也能调）、撤销、
 // 对比（最早的原图和现在的，拖中间的线看）、缩放。涂的笔画存原图的像素坐标；笔刷大小按屏幕上看着的粗细，落笔时换算成原图像素。
 // 补图模型第一次用要先下载（LaMaModel，约 216 MB）：没下时页面顶上一条「下载」，下好之前不能涂。
@@ -132,43 +132,40 @@ struct EraseCanvas: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    VStack(spacing: 0) {
-      if download.state != .ready {
-        modelBanner.padding(.horizontal, 16).padding(.vertical, 10)
-        Divider()
-      }
-      if model.source == nil {
-        DropZone(
-          tool: .erase, title: "拖入一张图",
-          detail: "涂住要擦掉的水印、路人或杂物，松手就自动补上周围的样子；结果另存成「原名-去水印」")
-      } else if let image = model.image {
-        ZStack(alignment: .bottom) {
-          if model.comparing, let original = model.history.first {
-            CompareSlider(before: original, after: image).padding(20).padding(.bottom, 56)
-          } else {
-            canvas(image)
-          }
-          controls.padding(.bottom, 14)
+    ToolPage(tool: .erase) {
+      Button("换一张…", systemImage: "photo.badge.plus") { Navigator.shared.importing = true }
+        .help("换一张图（⌘O）")
+        .disabled(model.busy)
+      Button("存储") { model.save() }
+        .buttonStyle(BrandButtonStyle())
+        .keyboardShortcut("s")
+        .help("另存成「原名-去水印」（⌘S）")
+        .disabled(model.busy || model.history.isEmpty)
+    } content: {
+      VStack(spacing: 0) {
+        if download.state != .ready {
+          modelBanner.padding(.horizontal, 20).padding(.vertical, 12)
+          Hairline()
         }
-      } else {
-        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        if model.source == nil {
+          DropZone(
+            tool: .erase, title: "拖入一张图",
+            detail: "一次一张；能放大了涂细处，⌘Z 一笔一笔退回，结果另存成「原名-去水印」")
+        } else if let image = model.image {
+          ZStack(alignment: .bottom) {
+            if model.comparing, let original = model.history.first {
+              CompareSlider(before: original, after: image).padding(20).padding(.bottom, 56)
+            } else {
+              canvas(image)
+            }
+            controls.padding(.bottom, 14)
+          }
+        } else {
+          ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
       }
-      StatusBar { status }
-    }
-    .navigationTitle("画笔擦除")
-    .toolbar {
-      ToolbarItem {
-        Button("换一张", systemImage: "photo.badge.plus") { Navigator.shared.importing = true }
-          .help("换一张图（⌘O）")
-          .disabled(model.busy)
-      }
-      ToolbarItem(placement: .primaryAction) {
-        Button("存储") { model.save() }
-          .buttonStyle(.borderedProminent)
-          .keyboardShortcut("s")
-          .help("另存成「原名-去水印」（⌘S）")
-          .disabled(model.busy || model.history.isEmpty)
-      }
+    } status: {
+      status
     }
     .onChange(of: model.source) { zoom = 1 }
   }
@@ -335,7 +332,7 @@ struct EraseCanvas: View {
         )
         .font(.callout)
         Spacer()
-        Button("下载") { Task { await download.start() } }.buttonStyle(.borderedProminent)
+        Button("下载") { Task { await download.start() } }.buttonStyle(BrandButtonStyle())
       }
     case .downloading(let fraction):
       ProgressView(value: fraction) {

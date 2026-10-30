@@ -1,6 +1,6 @@
 // 界面截图自检（照 Kitty Tools 的 SnapshotProbeTests）：关于窗口画在屏幕外存成 PNG；主窗口（侧边栏、工具栏、右边的选项）屏外画不出来，
 // 开一扇真窗口（在屏幕左下角，不当 key、不抢键盘），带着示例数据一个工具停 3.5 秒，每到一个工具把窗口编号写进
-// live-<工具>.txt，由外面用 screencapture -l <编号> 截。画笔擦除模型下载过的话，再在系统壁纸上真擦一处存 erase-result.png、
+// live-<工具>.txt（先截一张空着的 live-empty-pack），由外面用 screencapture -l <编号> 截。侧边栏按 key 窗口画（品牌粉选中）。画笔擦除模型下载过的话，再在系统壁纸上真擦一处存 erase-result.png、
 // 截一张对比（live-erase-compare）。偏好用临时域，不写用户的。平时跳过，要看时：
 // TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-box-shots xcodebuild -project macos/KittyBox.xcodeproj -scheme KittyBox \
 //   test -only-testing:KittyBoxTests/SnapshotProbeTests
@@ -42,6 +42,21 @@ struct SnapshotProbeTests {
     let suite = "kittybox-test-\(UUID())"
     defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
     let navigator = Navigator(defaults: try #require(UserDefaults(suiteName: suite)))
+
+    let window = NSWindow(
+      contentRect: NSRect(x: 60, y: 60, width: 1040, height: 680),
+      styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+      backing: .buffered, defer: false)
+    window.toolbarStyle = .unifiedCompact
+    // 当成 key 窗口画（侧边栏选中是品牌粉）：真窗口在测试里当不了 key，也不该抢用户的键盘
+    let hosting = NSHostingView(
+      rootView: MainView(navigator: navigator).environment(\.controlActiveState, .key))
+    hosting.sceneBridgingOptions = [.toolbars, .title]
+    window.contentView = hosting
+    window.orderFrontRegardless()
+    defer { window.orderOut(nil) }
+    // 空着的页（拖放区）
+    try await live(window, "empty-pack")
 
     navigator.pack.add([samples.appending(path: "猫咪相册"), samples.appending(path: "周报.txt")])
     navigator.pack.plan = await Archiver.plan(
@@ -85,16 +100,6 @@ struct SnapshotProbeTests {
     ]
     navigator.video.rects = [CGRect(x: 118, y: 6, width: 34, height: 20)]
 
-    let window = NSWindow(
-      contentRect: NSRect(x: 60, y: 60, width: 1040, height: 680),
-      styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-      backing: .buffered, defer: false)
-    window.toolbarStyle = .unifiedCompact
-    let hosting = NSHostingView(rootView: MainView(navigator: navigator))
-    hosting.sceneBridgingOptions = [.toolbars, .title]
-    window.contentView = hosting
-    window.orderFrontRegardless()
-    defer { window.orderOut(nil) }
     for tool in Tool.allCases {
       navigator.tool = tool
       try await live(window, tool.rawValue)

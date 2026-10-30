@@ -1,6 +1,6 @@
 // 视频台标（D4–D6）：拖进一段视频，第一帧铺在中间，在上面拖出台标的位置（可以框几处，框角的 × 删掉一处），点「导出」。
-// 导出好了画面换成前后对比（原视频和导出的第一帧，拖中间的线看），工具栏「对比」关掉接着框。
-// 工具栏：换一个视频、清空框、对比、导出；底下状态栏写框了几处、导出进度和结果。
+// 导出好了画面换成前后对比（原视频和导出的第一帧，拖中间的线看），页头「对比」关掉接着框。
+// 页头：换一个视频、清空框、对比、导出；底下状态栏写框了几处、导出进度和结果。
 // 框存的是第一帧的像素坐标（左上为原点），画面按比例缩放显示，拖的时候换算回去。
 
 import AppKit
@@ -76,11 +76,26 @@ struct VideoMarkView: View {
   @State private var draft: CGRect?
 
   var body: some View {
-    VStack(spacing: 0) {
+    ToolPage(tool: .video) {
+      Button("换一个视频…", systemImage: "film.stack") { Navigator.shared.importing = true }
+        .help("换一个视频（⌘O）")
+        .disabled(model.busy)
+      Button("清空框", systemImage: "trash") { model.rects = [] }
+        .help("清空框好的位置")
+        .disabled(model.rects.isEmpty || model.busy || model.comparing)
+      Toggle("对比", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
+        .toggleStyle(.button)
+        .help("拖中间的线对比原视频和导出的（第一帧）")
+        .disabled(model.resultFrame == nil)
+      Button("导出") { Task { await model.export() } }
+        .buttonStyle(BrandButtonStyle())
+        .keyboardShortcut(.defaultAction)
+        .disabled(model.rects.isEmpty || model.busy)
+    } content: {
       if model.source == nil {
         DropZone(
           tool: .video, title: "拖入视频",
-          detail: "在第一帧上框出台标，导出时逐帧补上；编码跟原视频走，结果另存成「原名-去水印」")
+          detail: "一次一段；可以框几处，编码跟原视频走，结果另存成「原名-去水印」")
       } else if let frame = model.frame {
         if model.comparing, let after = model.resultFrame {
           CompareSlider(before: frame, after: after).padding(20)
@@ -90,33 +105,12 @@ struct VideoMarkView: View {
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-      StatusBar {
-        status
-      } trailing: {
-        if case .exporting(let fraction) = model.state {
-          ProgressView(value: fraction).frame(width: 120)
-          Text(fraction.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
-        }
-      }
-    }
-    .navigationTitle("视频台标")
-    .toolbar {
-      ToolbarItemGroup {
-        Button("换一个视频", systemImage: "film.stack") { Navigator.shared.importing = true }
-          .help("换一个视频（⌘O）")
-          .disabled(model.busy)
-        Button("清空框", systemImage: "rectangle.dashed.badge.record") { model.rects = [] }
-          .help("清空框好的位置")
-          .disabled(model.rects.isEmpty || model.busy || model.comparing)
-        Toggle("对比原视频", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
-          .help("拖中间的线对比原视频和导出的（第一帧）")
-          .disabled(model.resultFrame == nil)
-      }
-      ToolbarItem(placement: .primaryAction) {
-        Button("导出") { Task { await model.export() } }
-          .buttonStyle(.borderedProminent)
-          .keyboardShortcut(.defaultAction)
-          .disabled(model.rects.isEmpty || model.busy)
+    } status: {
+      status
+      Spacer(minLength: 8)
+      if case .exporting(let fraction) = model.state {
+        ProgressView(value: fraction).frame(width: 120)
+        Text(fraction.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
       }
     }
   }

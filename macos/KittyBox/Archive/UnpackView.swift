@@ -101,30 +101,25 @@ struct UnpackView: View {
   @State private var asking: UnpackModel.Job.ID?
 
   var body: some View {
-    VStack(spacing: 0) {
+    ToolPage(tool: .unpack) {
+      Button("添加文件…", systemImage: "plus") { Navigator.shared.importing = true }
+        .help("添加压缩包（⌘O）")
+      Button("清掉做完的", systemImage: "checklist.checked") { model.clearFinished() }
+        .help("清掉解完的和没解成的")
+        .disabled(!model.jobs.contains(where: \.isFinished))
+    } content: {
       if model.jobs.isEmpty {
         DropZone(
           tool: .unpack, title: "拖入压缩包",
-          detail: "zip、7z、RAR、tar、iso 等都行，解到它旁边；Windows 打的中文名不乱码")
+          detail: "放进来就开始解，一个接一个；有密码的会停下来问")
       } else {
         table
       }
-      StatusBar {
-        Text(summary)
-      } trailing: {
-        // verbatim：不然 __MACOSX 的下划线会被当成 Markdown 的斜体
-        Text(verbatim: "__MACOSX、._ 开头的杂文件不解出来")
-      }
-    }
-    .navigationTitle("解压")
-    .toolbar {
-      ToolbarItemGroup {
-        Button("添加文件", systemImage: "plus") { Navigator.shared.importing = true }
-          .help("添加压缩包（⌘O）")
-        Button("清掉做完的", systemImage: "checklist.checked") { model.clearFinished() }
-          .help("清掉解完的和没解成的")
-          .disabled(!model.jobs.contains(where: \.isFinished))
-      }
+    } status: {
+      Text(summary)
+      Spacer(minLength: 8)
+      // verbatim：不然 __MACOSX 的下划线会被当成 Markdown 的斜体
+      Text(verbatim: "__MACOSX、._ 开头的杂文件不解出来")
     }
     .onAppear { asking = model.askingID }
     .onChange(of: model.askingID) { asking = $1 }
@@ -173,6 +168,7 @@ struct UnpackView: View {
       for id in ids { if let url = job(id)?.result { NSWorkspace.shared.open(url) } }
     }
     .tableStyle(.inset(alternatesRowBackgrounds: false))
+    .scrollContentBackground(.hidden)
     .onDeleteCommand { model.remove(selection) }
   }
 

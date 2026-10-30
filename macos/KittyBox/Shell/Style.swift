@@ -1,5 +1,6 @@
 // Whisker 设计刻度：从 Kitty Tools 的 Shell/Style.swift 摘出 Kitty Box 用得上的部分，刻度值保持一致（mac-whisker.mdc §2–4、§7）：
-// 圆角、命名弹簧曲线、动态色、悬停色、发丝线、卡片表面、种类色块，加四个工具的家族色。
+// 圆角、命名弹簧曲线、动态色、悬停色、选中色、发丝线（Hairline）、卡片表面、种类色块、品牌粉主按钮（BrandButtonStyle），
+// 加四类工具的家族色。强调色跟随系统：系统是「多色」时就是 AccentColor.colorset 的品牌粉（不拷 Kitty Tools 的 Accent.swift）。
 // 界面里的圆角、曲线、颜色一律从这里取，不硬编码；Kitty Tools 那边有、这里还没用到的（输入框、空状态、危险色…）用到时再照搬。
 
 import AppKit
@@ -83,6 +84,20 @@ enum Style {
       })
   }
 
+  /// 强调色（品牌粉 #FF4D7E，系统选了别的强调色就跟它）：主按钮、侧边栏选中、当前该操作的东西
+  static let brand = Color.accentColor
+  /// 强调色填充上的字和符号
+  static let onBrand = Color.white
+  /// 品牌奶油底（#FFF5F0 / 深 #2A1D22）：关于窗口的底色
+  static let brandCream = dynamic(
+    light: NSColor(red: 1, green: 0.961, blue: 0.941, alpha: 1),
+    dark: NSColor(red: 0.165, green: 0.114, blue: 0.133, alpha: 1))
+  /// 列表选中（一块灰色高亮，文字不反白）：侧边栏在窗口不是 key 时
+  static let selectedFill = dynamic(
+    light: .black.withAlphaComponent(0.07), dark: .white.withAlphaComponent(0.10),
+    contrast: (.black.withAlphaComponent(0.16), .white.withAlphaComponent(0.22)))
+  /// 停用时自绘控件乘的透明度
+  static let disabledOpacity: Double = 0.35
   /// 悬停
   static let hoverFill = dynamic(
     light: .black.withAlphaComponent(0.04), dark: .white.withAlphaComponent(0.05))
@@ -100,7 +115,7 @@ enum Style {
     return reduceTransparency
   }
 
-  /// 四类工具的家族色：侧边栏色块、拖放区、拖着经过时的描边共用（去水印的三项同一个色）
+  /// 四类工具的家族色：侧边栏和页头的色块、拖放区、拖着经过时的描边共用（去水印的三项同一个色）
   enum Family {
     static let pack = Color(nsColor: .systemOrange)
     static let unpack = Color(nsColor: .systemGreen)
@@ -129,6 +144,44 @@ struct KindTile: View {
       )
       .overlay(shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
       .accessibilityHidden(true)
+  }
+}
+
+/// 发丝线（分隔线）：横线（vertical 时竖线），0.5 pt `Style.hairline`，增强对比度时 1 pt。长度由外面定
+struct Hairline: View {
+  var vertical = false
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  var body: some View {
+    let width = Style.hairlineWidth(contrast)
+    Style.hairline.frame(width: vertical ? width : nil, height: vertical ? nil : width)
+      .accessibilityHidden(true)
+  }
+}
+
+/// 品牌粉主按钮（照 Kitty Tools）：胶囊、强调色底、白字，高度和旁边的系统按钮一样（15 上 20、26 起 24），
+/// 按下缩一点。每页一个，放在页头最右（打包、转成 JPEG、去掉角标、存储、导出）
+struct BrandButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var isEnabled
+
+  /// 常规档的高和字往上让多少：15 上系统按钮的字在 20 高里偏上 1 pt，让 2 pt 并排时基线才齐；26 起居中
+  private static let regular: (height: CGFloat, lift: CGFloat) = {
+    if #available(macOS 26, *) { (24, 0) } else { (20, 2) }
+  }()
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .lineLimit(1)
+      .fontWeight(.medium)
+      .foregroundStyle(Style.onBrand)
+      .padding(.horizontal, 12)
+      .padding(.bottom, Self.regular.lift)
+      .frame(minHeight: Self.regular.height)
+      .background(Style.brand, in: .capsule)
+      .contentShape(.capsule)
+      .opacity(isEnabled ? 1 : Style.disabledOpacity)
+      .scaleEffect(configuration.isPressed ? 0.97 : 1)
+      .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
   }
 }
 

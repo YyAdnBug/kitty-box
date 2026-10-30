@@ -1,5 +1,5 @@
 // 首页（A2）：四个工具一格一个，点一格进去用，左上角返回。照 Kitty Tools 主界面的格子：家族色块 + 名字 + 一行说明。
-// 各工具的页面从 M1 起一批一个加进来；还没做的进去是一句「还没做好」。
+// 文件拖到哪一格就交给哪个工具，拖到格子外面按类型分派（Navigator）。还没做的工具进去是一句「还没做好」。
 
 import SwiftUI
 
@@ -43,33 +43,78 @@ enum Tool: CaseIterable, Identifiable, Hashable {
     case .watermark: Style.Family.watermark
     }
   }
+
+  /// 做好了、能收文件的工具
+  var isReady: Bool { self == .pack || self == .unpack }
 }
 
 struct HomeView: View {
-  @State private var path: [Tool] = []
+  @Bindable private var navigator = Navigator.shared
+  @Environment(\.openWindow) private var openWindow
 
   var body: some View {
-    NavigationStack(path: $path) {
+    NavigationStack(path: $navigator.path) {
       HStack(spacing: 12) {
         ForEach(Tool.allCases) { tool in
-          Button {
-            path.append(tool)
-          } label: {
-            ToolTile(tool: tool)
+          ToolButton(tool: tool) {
+            navigator.path.append(tool)
+          } drop: { urls in
+            navigator.open(tool, with: urls)
           }
-          .buttonStyle(TileButtonStyle())
         }
       }
       .padding(20)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .contentShape(Rectangle())
+      .dropDestination(for: URL.self) { urls, _ in
+        navigator.route(urls)
+        return true
+      }
       .navigationTitle("Kitty Box")
       .navigationDestination(for: Tool.self) { tool in
-        ContentUnavailableView(
-          tool.title, systemImage: tool.symbol, description: Text("还没做好，下一批就加上。")
-        )
-        .navigationTitle(tool.title)
+        switch tool {
+        case .pack: PackView(model: navigator.pack)
+        case .unpack: UnpackView(model: navigator.unpack)
+        case .convert, .watermark:
+          ContentUnavailableView(
+            tool.title, systemImage: tool.symbol, description: Text("还没做好，后面几批加上。")
+          )
+          .navigationTitle(tool.title)
+        }
       }
     }
-    .frame(minWidth: 600, minHeight: 220)
+    // 进到工具页时窗口最小高度跟着变大（工具页自己的 minHeight 传不到窗口上）
+    .frame(minWidth: 600, minHeight: navigator.path.isEmpty ? 220 : 560)
+    .onAppear { navigator.openWindow = openWindow }
+  }
+}
+
+/// 一格：点进去；做好了的工具能直接把文件拖上来，拖着经过时描一圈家族色
+private struct ToolButton: View {
+  let tool: Tool
+  let action: () -> Void
+  let drop: ([URL]) -> Void
+  @State private var targeted = false
+
+  var body: some View {
+    let button = Button(action: action) { ToolTile(tool: tool) }
+      .buttonStyle(TileButtonStyle())
+      .overlay {
+        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+          .strokeBorder(tool.color, lineWidth: 2)
+          .opacity(targeted ? 1 : 0)
+          .allowsHitTesting(false)
+      }
+    if tool.isReady {
+      button.dropDestination(for: URL.self) { urls, _ in
+        drop(urls)
+        return true
+      } isTargeted: {
+        targeted = $0
+      }
+    } else {
+      button
+    }
   }
 }
 

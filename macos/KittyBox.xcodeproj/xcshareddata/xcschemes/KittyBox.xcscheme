@@ -30,6 +30,16 @@
       shouldUseLaunchSchemeArgsEnv = "YES"
       shouldAutocreateTestPlan = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "6B0000000000000000000026"
+               BuildableName = "KittyBoxTests.xctest"
+               BlueprintName = "KittyBoxTests"
+               ReferencedContainer = "container:KittyBox.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

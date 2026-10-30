@@ -1,0 +1,10 @@
+// 单测 target：宿主是 App（@testable import KittyBox，用包里的 7zz），只覆盖与 App 不同的设置；其余沿用 project 层的 Debug / Release
+PRODUCT_NAME = KittyBoxTests
+PRODUCT_MODULE_NAME = KittyBoxTests
+PRODUCT_BUNDLE_IDENTIFIER = com.yy.kitty-box.tests
+INFOPLIST_FILE =
+ASSETCATALOG_COMPILER_APPICON_NAME =
+// APP_PRODUCT_NAME 来自 project 层的 Debug / Release.xcconfig（Kitty Box Dev / Kitty Box）
+TEST_HOST = $(BUILT_PRODUCTS_DIR)/$(APP_PRODUCT_NAME).app/Contents/MacOS/$(APP_PRODUCT_NAME)
+BUNDLE_LOADER = $(TEST_HOST)
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @loader_path/../Frameworks

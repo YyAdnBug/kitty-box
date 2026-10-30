@@ -30,9 +30,12 @@
   - 没有标志、又不是合法 UTF-8 的，按 GBK；
   - 每次都把 `hdrcharset` 显式传给 bsdtar，不依赖子进程的 locale。
   - 不能一律按 GBK：系统 `ditto` 和访达打的 zip 写的是 UTF-8 字节，却不标 UTF-8 标志，实测如此。
-- 7z / rar / rar5 / tar.* / iso 等交给 7zz，带密码的 7z（包括连文件名也加密的）和 RAR 都能解。
-- 密码错误时弹窗重新输入，不留记录。
-- 解到压缩包旁边、与压缩包同名的文件夹里；如果包里只有一个顶层文件夹，就不再多套一层。
+- 7z / rar / rar5 / iso 等交给 7zz，带密码的 7z（包括连文件名也加密的）和 RAR 都能解。tar 一族（.tar、.tar.gz、.tgz 等）也交给系统 tar：7zz 解 .tar.gz 只解出一层 .tar。
+- 有密码时在解压页那一行里就地问，错了说「密码不对」再问，不留记录。
+- **没给密码也要传一个占位的**（2026-10-30 实测）：tar 不给 `--passphrase` 会对着空的标准输入连问上万次，给空字符串它拒收；7zz 不给 `-p` 会卡在问密码。不加密的包会忽略它。按报错里的 `Incorrect passphrase`（tar）/ `Wrong password`（7zz）分出「要密码」和「密码不对」。
+- 解到压缩包旁边、与压缩包同名的文件夹里；如果包里只有一样东西（文件夹或文件），就直接放出来，不再多套一层（比 B8 多了「单个文件」：`报告.docx.zip` 解出 `报告.docx`，同访达）。重名加「 2」。
+- 先解到旁边一个隐藏的临时文件夹（`.<名字> 解压中`），去掉杂文件、做完再挪成正式名字；失败时删掉，不留半截。
+- **隔离标记跟着走**：包带着「从网上下载」的隔离标记时，解出来的每样东西都带上（同系统的归档实用工具），不然包里的 App 打开时不会再被检查。
 
 ### 打包
 - 用 7zz，只出 zip 和 7z 两种格式，默认 zip：
@@ -53,7 +56,11 @@
 - **开发目录，列着但默认不勾**（一键全勾）：`.git`、`.svn`、`node_modules`、`.venv`、`__pycache__`、`.idea`、`.vscode`。
 - **自己加的规则**：按名字写通配符，可以用 `*` 和 `?`，路径里任意一层都算；以 `/` 结尾的只匹配文件夹；中间带 `/` 的不收。
 - **存法**：一份全局清单，存在偏好里。打包面板和设置里都能勾、加、删，改了就记住。
-- **一套匹配，看到的就是打进去的**：`Archive/IgnoreRules.swift` 是纯函数，单测锁住。打包时自己遍历文件夹，用它筛一遍，把剩下的清单通过 `@listfile` 交给 7zz，不用 7zz 自己的 `-xr!`，免得两套匹配对不上。面板底部写「打包 N 个，忽略 M 个」，点开能看到忽略了哪些、各是哪条规则排掉的。
+- **一套匹配，看到的就是打进去的**：`Archive/IgnoreRules.swift` 是纯函数，单测锁住。打包时自己遍历文件夹，用它筛一遍，把剩下的清单通过 `@listfile` 交给 7zz（在 `plan.base` 下跑，清单里是相对路径；`-snl` 链接存成链接），不用 7zz 自己的 `-xr!`，免得两套匹配对不上。面板底部写「打包 N 个，忽略 M 项」（被排掉的文件夹算一项），点开能看到忽略了哪些、各是哪条规则排掉的。
+  - 清单里写文件夹的话，7zz 会把它整个递归打进去，连被忽略的一起（`-r-` 也拦不住，实测）。所以只列本来就空的文件夹；里面只剩被忽略的东西的文件夹不列，它在包里就没了。
+  - `._` 开头的附加信息文件，系统遍历文件夹时就跳过了（实测），不进清单，也不出现在「忽略了」里。
+  - 匹配不分大小写，名字先统一成合成形式（访达给的常是分解形式）。
+- **zip 的密码只能是 ASCII**：7zz 打 zip 时不收中文这类密码（报 `E_INVALIDARG`，实测），7z 没这个限制。打包页当场提示「要用中文密码请选 7z」，按钮不让点。
 - **解压时也跳过**：`__MACOSX`、`._*`、`.DS_Store`（B7）。
 
 ### 图片转换
@@ -92,9 +99,9 @@
 
 | 目录 | 文件 |
 |---|---|
-| `App/` | `KittyBoxApp.swift`（`@main`，主窗口）、`AppDelegate.swift`（`application(_:open:)`：拖到程序坞图标上的文件按类型分给对应工具） |
-| `Shell/` | `HomeView.swift`（四格首页，照 Kitty Tools 的 HomePanel；拖放区 M1 加）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）。M1 再拷 `Subprocess.swift`。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
-| `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、密码重试）、`ArchiveView.swift` |
+| `App/` | `KittyBoxApp.swift`（`@main`，主窗口）、`AppDelegate.swift`（`application(_:open:)`：拖到程序坞图标上、「打开方式」选了本 App 的文件交给 Navigator；能收哪些写在 `Config/Info.plist` 的 `CFBundleDocumentTypes`：压缩包 Alternate，其余 None） |
+| `Shell/` | `HomeView.swift`（四格首页，照 Kitty Tools 的 HomePanel；文件拖到哪一格交给哪个工具）、`Navigator.swift`（首页导航 + 拖进来的文件往哪送：全是压缩包就解压，不然交给打包；各工具页的状态放这里。M2 起非压缩包改成「打开首页让你选」）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度，加四个工具的家族色）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），没有设置页，不拷 `Accent.swift` |
+| `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、解完的清理和挪位置）、`PackView.swift`（打包页和它的 PackModel）、`UnpackView.swift`（解压页和它的 UnpackModel：一个接一个解、就地问密码） |
 | `ImageConvert/` | `ImageConverter.swift`、`ImageConvertView.swift` |
 | `Watermark/` | `GeminiMark.swift`、`Inpainter.swift`、`EraseCanvas.swift`、`VideoDelogo.swift`、`Delogo.ci.metal`、`WatermarkView.swift` |
 | `Resources/` | `Assets.xcassets`（小猫图标）、`changelog.json`、Gemini alpha 图和各份 LICENSE |
@@ -109,7 +116,7 @@
 - `IgnoreRulesTests`：通配符、任意层级、`/` 结尾只认文件夹、中间带 `/` 的拒收；
 - `WindowsNamesTests`：非法字符、结尾空格或点、保留名，以及全角符号（比如「：」）不算问题；
 - `GeminiMarkTests`：在已知图片上合成水印，去掉后每个像素误差不超过 2，并且能选对候选位置；
-- `ArchiverTests`：在临时目录里各跑一遍往返：zip 和 7z、带密码和不带密码、GBK zip；
+- `ArchiverTests`：在临时目录里真调 7zz 和 tar 各跑一遍往返：zip 和 7z、带密码和不带、ZipCrypto、中文密码的 zip 被拦下、GBK 名字的 zip、忽略清单和空文件夹、只有一样东西时不多套一层、隔离标记跟着走；外加名字的纯函数；
 - `ImageConverterTests`：各种输出格式往返转换一遍；
 - 界面用 SnapshotProbeTests 做屏外截图检查，等 M1 有界面后再建。
 
@@ -126,7 +133,8 @@
 ## 5. 里程碑
 
 - **M0 骨架**（2026-10-30 做完）：`git init -b macos`；Xcode 工程（同步文件夹）和 xcconfig；`Style.swift`；小猫纸箱图标和 DMG 背景；`build-dmg.sh`、`fetch-vendor.sh`；AGENTS / CLAUDE / 规则文档；四格首页（点进去是「还没做好」）。测试 target 等 M1 有第一个单测时加。
-- **M1 打包 / 解压**：`ZipNames` → `IgnoreRules` → `WindowsNames` → `Archiver` → 界面，单测先行。最后请你在 Windows 上双击打开几个包试一下：中文名的 zip、ZipCrypto 加密的、AES 加密的、7z。如果中文名乱码，再加「给中文 Windows 写 GBK 文件名」这一项。
+- **M1 打包 / 解压**（2026-10-30 做完，23 个单测）：`ZipNames` → `IgnoreRules` → `WindowsNames` → `Archiver` → 打包页、解压页、程序坞拖放。**待你手测**：在 Windows 上双击打开几个包——中文名的 zip、ZipCrypto 加密的、AES 加密的、7z。如果中文名乱码，再加「给中文 Windows 写 GBK 文件名」这一项。
+  - ponytail: 没有进度条和取消（大包只转圈）；7zz 的 `-bsp1` 能给进度，要的时候再接。
 - **M2 图片转换**。
 - **M3 Gemini 角标 + 视频台标**。
 - **M4 框选擦除**：选定模型并写进 `fetch-vendor.sh` → 推理和裁剪贴回 → 画笔界面。

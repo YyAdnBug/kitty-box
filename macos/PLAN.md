@@ -154,6 +154,7 @@
 - **M2 图片转换**（2026-10-30 做完，共 32 个单测）：`ImageConverter` → 转换页 → 首页「收到 N 个文件，点一格交给它」。
 - **M3 Gemini 角标 + 视频台标**（2026-10-30 做完，共 38 个单测）：`GeminiMark` → `VideoDelogo` → 去水印页（画笔擦除那一格先空着）。**待你手测**：拿真的 Gemini 生成图、带台标的真视频各试一次。
 - **M4 画笔擦除**（2026-10-30 做完，共 42 个单测）：选定模型并写进 `fetch-vendor.sh` → `Inpainter` → 画笔界面 → Gemini 认不出时一键改用画笔擦除。**待你手测**：在真图上涂一处水印擦一下。
+- **发布 0.1.0**（2026-10-30）：Updater + 关于窗口 + changelog → `build-dmg.sh`（DMG 约 200 MB，带背景和摆位）→ GitHub release `macos-v0.1.0`（latest，tag 在 `384e058`，附 DMG 和 `_arm64.zip`）→ main 的 README 写上安装步骤。
 
 ## 6. 第一版不做
 

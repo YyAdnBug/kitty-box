@@ -5,7 +5,10 @@
 // - 文件夹空白处右键：「新建文件 ▸」文本文件、Markdown、Word、Excel、PPT（模板在 Templates/，Word 用系统 textutil 转的，
 //   Excel、PPT 是手写的最小 Office Open XML），再加上「新建文件模板」文件夹里用户自己放的任何文件（放什么就能新建什么）。
 //   拷一份到这个文件夹，重名加「 2」，日期是新建的时候（不带模板的）；拷不进去（沙盒例外以外的地方、只读的盘）响一声。
-// 扩展必须在沙盒里：交给 App 的那几项不碰文件；新建文件要写用户的文件夹，靠 Config/Finder.entitlements 里的例外（home 和外接盘）。
+// - 两处都有「用 X 打开」（用户要「右键进入指定应用」）：App 设置里选的那几个 App（默认只有终端），空白处打开这个文件夹，
+//   选中的打开选中的；它认不得的文件改开所在的文件夹（终端碰到文本、图片会当脚本跑）。App 列表从 App 的偏好里读。
+// 扩展必须在沙盒里：交给 App 的那几项不碰文件；新建文件要写用户的文件夹，靠 Config/Finder.entitlements 里的例外（home 和外接盘），
+// 读 App 的偏好也是那里的只读例外。
 // 看所有位置（directoryURLs 设成根目录），不只是某几个文件夹里才有菜单。
 // 要在 系统设置 › 通用 › 登录项与扩展 › 访达 里打开它（App 的设置 › 通用 › 访达 有按钮）。
 
@@ -71,6 +74,11 @@ final class FinderMenu: FIFinderSync {
     ]
   }
 
+  /// App 的 id：扩展的 id 是 App 的 id 加 .finder（Debug、Release 各认各的）
+  private static let appID =
+    (Bundle.main.bundleIdentifier.map { ($0 as NSString).deletingPathExtension })
+    ?? "com.yy.kitty-box"
+
   /// 随扩展的模板，按这个顺序排在菜单最前面
   private static let builtIn = [
     "文本文件.txt", "Markdown.md", "Word 文档.docx", "Excel 表格.xlsx", "PPT 演示文稿.pptx",
@@ -91,15 +99,15 @@ final class FinderMenu: FIFinderSync {
   // 访达在主线程上要菜单、点菜单项
   override func menu(for menuKind: FIMenuKind) -> NSMenu? {
     switch menuKind {
-    case .contextualMenuForItems: toolMenu()
-    case .contextualMenuForContainer: newFileMenu()
+    case .contextualMenuForItems: itemMenu()
+    case .contextualMenuForContainer: folderMenu()
     default: nil
     }
   }
 
   // MARK: 交给 App
 
-  private func toolMenu() -> NSMenu? {
+  private func itemMenu() -> NSMenu? {
     guard let urls = FIFinderSyncController.default().selectedItemURLs(), !urls.isEmpty else {
       return nil
     }
@@ -110,17 +118,17 @@ final class FinderMenu: FIFinderSync {
       // 系统符号本来就是模板图：访达按菜单的字色画
       item.image = NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil)
     }
+    addOpenWith(to: menu, action: #selector(openItems(_:)))
     return menu
   }
 
   @objc private func hand(_ sender: AnyObject?) {
     guard let index = (sender as? NSMenuItem)?.tag, Tool.allCases.indices.contains(index),
-      let urls = FIFinderSyncController.default().selectedItemURLs(), !urls.isEmpty,
-      let id = Bundle.main.bundleIdentifier
+      let urls = FIFinderSyncController.default().selectedItemURLs(), !urls.isEmpty
     else { return }
     var link = URLComponents()
-    // 扩展的 id 是 App 的 id 加 .finder，App 用自己的 id 当网址的 scheme（Debug、Release 各认各的）
-    link.scheme = (id as NSString).deletingPathExtension
+    // App 用自己的 id 当网址的 scheme
+    link.scheme = Self.appID
     link.host = "open"
     link.queryItems =
       [URLQueryItem(name: "tool", value: Tool.allCases[index].rawValue)]
@@ -130,7 +138,7 @@ final class FinderMenu: FIFinderSync {
 
   // MARK: 新建文件
 
-  private func newFileMenu() -> NSMenu? {
+  private func folderMenu() -> NSMenu? {
     guard FIFinderSyncController.default().targetedURL() != nil else { return nil }
     let templates = NSMenu()
     for (index, template) in Self.templates().enumerated() {
@@ -147,6 +155,7 @@ final class FinderMenu: FIFinderSync {
       withTitle: "添加自己的模板…", action: #selector(showTemplates(_:)), keyEquivalent: "")
     let menu = NSMenu()
     menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "").submenu = templates
+    addOpenWith(to: menu, action: #selector(openFolder(_:)))
     return menu
   }
 
@@ -190,5 +199,62 @@ final class FinderMenu: FIFinderSync {
     try? FileManager.default.createDirectory(
       at: Self.userTemplates, withIntermediateDirectories: true)
     NSWorkspace.shared.open(Self.userTemplates)
+  }
+
+  // MARK: 用 App 打开
+
+  /// App 设置里选的 App（bundle id，这台 Mac 上找得到的），从 App 的偏好里读（Finder.entitlements 的只读例外）。
+  /// ponytail: 键名和默认值抄的 App 的 Prefs.openWithApps、OpenWithSection，那边改了这里跟着改
+  private static var openWithApps: [URL] {
+    (UserDefaults(suiteName: appID)?.stringArray(forKey: "openWithApps") ?? ["com.apple.Terminal"])
+      .compactMap(NSWorkspace.shared.urlForApplication(withBundleIdentifier:))
+  }
+
+  /// 每个 App 一项「用 X 打开」，带它的图标；tag 是它在 openWithApps 里的位置
+  private func addOpenWith(to menu: NSMenu, action: Selector) {
+    for (index, app) in Self.openWithApps.enumerated() {
+      var name = FileManager.default.displayName(atPath: app.path)
+      if name.hasSuffix(".app") { name.removeLast(4) }
+      // 「用终端打开」「用 Visual Studio Code 打开」：西文名两边空一格，同「用 Kitty Box 打包」
+      let gap = { (end: Character?) in end?.isASCII == true ? " " : "" }
+      let item = menu.addItem(
+        withTitle: "用" + gap(name.first) + name + gap(name.last) + "打开", action: action,
+        keyEquivalent: "")
+      item.tag = index
+      item.image = NSWorkspace.shared.icon(forFile: app.path)
+      item.image?.size = NSSize(width: 16, height: 16)
+    }
+  }
+
+  /// 空白处右键：打开这个文件夹（终端开在这里）
+  @objc private func openFolder(_ sender: AnyObject?) {
+    guard let folder = FIFinderSyncController.default().targetedURL() else { return }
+    open([folder], with: sender)
+  }
+
+  @objc private func openItems(_ sender: AnyObject?) {
+    guard let urls = FIFinderSyncController.default().selectedItemURLs(), !urls.isEmpty else {
+      return
+    }
+    open(urls, with: sender)
+  }
+
+  /// 文件夹原样给；文件给那个 App 认得的（系统登记的它能开的类型），认不得的改给所在的文件夹，几个落到同一个文件夹只给一次
+  private func open(_ urls: [URL], with sender: AnyObject?) {
+    let apps = Self.openWithApps
+    guard let index = (sender as? NSMenuItem)?.tag, apps.indices.contains(index) else { return }
+    let app = apps[index]
+    var targets: [URL] = []
+    for url in urls {
+      let folder = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+      let opens =
+        folder
+        || NSWorkspace.shared.urlsForApplications(toOpen: url).contains { $0.path == app.path }
+      let target = opens ? url : url.deletingLastPathComponent()
+      if !targets.contains(target) { targets.append(target) }
+    }
+    NSWorkspace.shared.open(targets, withApplicationAt: app, configuration: .init()) { _, error in
+      if let error { log.error("用 App 打开失败：\(error, privacy: .public)") }
+    }
   }
 }

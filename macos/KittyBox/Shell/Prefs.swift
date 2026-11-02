@@ -36,4 +36,6 @@ enum Prefs {
   static let packLevel = "packLevel"
   /// 解压：解完把压缩包移到废纸篓
   static let unpackTrashArchive = "unpackTrashArchive"
+  /// 访达右键「用 X 打开」的 App（bundle id，按加进来的顺序）；访达扩展读同一个键（FinderMenu.openWithApps）
+  static let openWithApps = "openWithApps"
 }

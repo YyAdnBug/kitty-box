@@ -1,12 +1,13 @@
 // 设置窗口（M7，App 菜单「设置…」⌘,；用户问「没看到设置的入口」）：两页，分组表单，同 Kitty Tools 设置页的样子。
 // - 通用：外观（跟随系统 / 浅色 / 深色）、自动检查更新、做完时程序坞图标跳一下、访达右键菜单（M9 的访达扩展：开没开、去哪打开、
-//   新建文件模板文件夹；还有「服务」菜单怎么关）、结果放哪。
+//   新建文件模板文件夹；还有「服务」菜单怎么关）、右键「用 X 打开」的 App、结果放哪。
 // - 模型：画笔擦除和 AI 水印用哪个补图模型（快速 / 标准 / 高清，AIModel），去背景「精细」用的抠图模型；各自下载、删除，下好的占多少地方。
 // 打包的忽略清单、各页的格式和质量就在各自页面的右边，不在这里重复一份。
 
 import AppKit
 import FinderSync
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
   var body: some View {
@@ -90,7 +91,7 @@ private struct GeneralSettings: View {
               .foregroundStyle(finderOn ? Style.positiveInk : Color.secondary)
           }
           Text(
-            "选中文件右键，第一层就有「用 Kitty Box 打包、解压、转换、去水印、去背景」；文件夹空白处右键有「新建文件」。要在「系统设置 › 通用 › 登录项与扩展 › 访达」里打开 Kitty Box。"
+            "选中文件右键，第一层就有「用 Kitty Box 打包、解压、转换、去水印、去背景」；文件夹空白处右键有「新建文件」；两处都有下面选的「用 App 打开」。要在「系统设置 › 通用 › 登录项与扩展 › 访达」里打开 Kitty Box。"
           )
         }
         LabeledContent {
@@ -117,6 +118,7 @@ private struct GeneralSettings: View {
       } header: {
         Text("访达")
       }
+      OpenWithSection()
       Section {
         Text("结果都放在原文件旁边，原文件不动；重名时加「 2」。去水印、去背景另存成「原名-去水印」「原名-去背景」。")
           .foregroundStyle(.secondary)
@@ -130,6 +132,68 @@ private struct GeneralSettings: View {
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
     {
       _ in finderOn = FIFinderSyncController.isExtensionEnabled
+    }
+  }
+}
+
+/// 访达右键「用 X 打开」的 App：一行一个（图标、名字、移除），最后「添加 App…」。存 bundle id（挪了位置、升了级照样认得）；
+/// 访达扩展读同一个偏好，改了下次右键就是新的
+private struct OpenWithSection: View {
+  /// 没设过时只有终端（同 FinderMenu.openWithApps 的默认）
+  @State private var ids =
+    UserDefaults.standard.stringArray(forKey: Prefs.openWithApps) ?? ["com.apple.Terminal"]
+
+  var body: some View {
+    Section {
+      ForEach(ids, id: \.self) { id in
+        let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)
+        LabeledContent {
+          Button("移除") { ids.removeAll { $0 == id } }
+        } label: {
+          HStack(spacing: 8) {
+            Image(
+              nsImage: app.map { NSWorkspace.shared.icon(forFile: $0.path) }
+                ?? NSWorkspace.shared.icon(for: .application)
+            )
+            .resizable()
+            .frame(width: 20, height: 20)
+            Text(app.map(Self.name) ?? id).lineLimit(1).truncationMode(.tail)
+            if app == nil {
+              Text("这台 Mac 上没有").font(.caption).foregroundStyle(.secondary)
+            }
+          }
+        }
+      }
+      LabeledContent {
+        Button("添加 App…", action: add)
+      } label: {
+        Text(ids.isEmpty ? "右键里不列 App" : "再加一个")
+      }
+    } header: {
+      Text("右键「用 App 打开」")
+    } footer: {
+      Text("文件夹空白处右键用它打开这个文件夹，选中文件或文件夹右键用它打开选中的；它打不开的文件改成打开所在的文件夹（终端就开在那里）。")
+        .font(.caption).foregroundStyle(.secondary)
+    }
+    .onChange(of: ids) { UserDefaults.standard.set($1, forKey: Prefs.openWithApps) }
+  }
+
+  /// 访达里的名字（终端、Visual Studio Code），不带 .app
+  private static func name(_ app: URL) -> String {
+    let name = FileManager.default.displayName(atPath: app.path)
+    return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+  }
+
+  /// 从「应用程序」里挑，可以多选；已经在列表里的不重复加
+  private func add() {
+    let panel = NSOpenPanel()
+    panel.allowedContentTypes = [.application]
+    panel.allowsMultipleSelection = true
+    panel.directoryURL = URL(filePath: "/Applications")
+    panel.prompt = "添加"
+    guard panel.runModal() == .OK else { return }
+    for id in panel.urls.compactMap({ Bundle(url: $0)?.bundleIdentifier }) where !ids.contains(id) {
+      ids.append(id)
     }
   }
 }

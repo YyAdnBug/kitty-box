@@ -35,11 +35,21 @@ nonisolated enum VideoDelogo {
   /// 第一帧（已经按视频的方向转正），框台标用。往后放宽一秒：不少视频能显示的第一帧不在 0（比如 0.033 秒），
   /// 卡死在 0 上系统回「无法打开」（-11832，2026-10-30 用户的 tonight.mp4）
   static func firstFrame(of url: URL) async throws -> CGImage {
-    let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+    let asset = AVURLAsset(url: url)
+    let generator = AVAssetImageGenerator(asset: asset)
     generator.appliesPreferredTrackTransform = true
     generator.requestedTimeToleranceBefore = .zero
     generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
-    return try await generator.image(at: .zero).image
+    guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+      throw Failure.noVideo
+    }
+    return try await generator.image(at: firstShown(track)).image
+  }
+
+  /// 画面从几秒开始有：开头空着一段（剪过的视频，播放器那段是黑的）时是空段之后。
+  /// 空段里放宽多少都取不出帧（2026-11-02 实测空 0.5 秒照样「无法打开」）
+  static func firstShown(_ track: AVAssetTrack) async throws -> CMTime {
+    try await track.load(.segments).first { !$0.isEmpty }?.timeMapping.target.start ?? .zero
   }
 
   // MARK: 补像素（纯函数）
@@ -58,18 +68,17 @@ nonisolated enum VideoDelogo {
     }
     for y in top...bottom {
       for x in left...right {
-        let weights = [
-          1 / Double(x - left + 1), 1 / Double(right - x + 1), 1 / Double(y - top + 1),
-          1 / Double(bottom - y + 1),
-        ]
-        let edges = [(left - 1, y), (right + 1, y), (x, top - 1), (x, bottom + 1)]
+        // 到左右上下四条边的距离的倒数当权重（每帧每个像素都跑：只用局部变量，不建数组）
+        let (toLeft, toRight) = (1 / Double(x - left + 1), 1 / Double(right - x + 1))
+        let (toTop, toBottom) = (1 / Double(y - top + 1), 1 / Double(bottom - y + 1))
+        let total = toLeft + toRight + toTop + toBottom
         // 框里全换；羽化带里按离框的距离从「全换」过渡到「不换」
         let outside = max(max(x0 - x, x - x1, 0), max(y0 - y, y - y1, 0))
         let keep = band > 0 ? max(0, 1 - Double(outside) / Double(band)) : 1
         for channel in 0..<3 {
           let filled =
-            zip(weights, edges).map { $0 * at($1.0, $1.1, channel) }.reduce(0, +)
-            / weights.reduce(0, +)
+            (toLeft * at(left - 1, y, channel) + toRight * at(right + 1, y, channel)
+              + toTop * at(x, top - 1, channel) + toBottom * at(x, bottom + 1, channel)) / total
           let value = at(x, y, channel) * (1 - keep) + filled * keep
           pixels[(y * width + x) * 4 + channel] = UInt8(max(0, min(255, value.rounded())))
         }
@@ -128,6 +137,8 @@ nonisolated enum VideoDelogo {
       }
     } catch {
       try? FileManager.default.removeItem(at: target)
+      // 停下的不算失败
+      if error is CancellationError { throw error }
       throw Failure.exportFailed(error.localizedDescription)
     }
     return target
@@ -192,10 +203,22 @@ nonisolated enum VideoDelogo {
       pairs.append((packets, sound))
     }
 
+    // 开头空着的那一段（firstShown）视频合成照样出帧、是黑的：不要，结果开头同原视频一样空着，第一帧不是黑的
+    let shown = try await firstShown(track)
     guard reader.startReading() else { throw reader.error ?? Failure.exportFailed("读不了这段视频。") }
     guard writer.startWriting() else { throw writer.error ?? Failure.exportFailed("写不了结果。") }
     writer.startSession(atSourceTime: .zero)
     let duration = try await asset.load(.duration).seconds
+    var percent = -1
+
+    // 停下或出错：两头都收掉，写了一半的文件 AVAssetWriter 自己删
+    var finished = false
+    defer {
+      if !finished {
+        reader.cancelReading()
+        writer.cancelWriting()
+      }
+    }
 
     // 轮流往各条轨道里搬：哪条能收就搬一包，搬完了就收尾；都收不下时等一下（写入的一方在编码）
     while !pairs.isEmpty {
@@ -209,17 +232,22 @@ nonisolated enum VideoDelogo {
           pairs.remove(at: index)
           continue
         }
-        guard input.append(buffer) else {
-          reader.cancelReading()
-          throw writer.error ?? Failure.exportFailed("写不进去。")
-        }
+        let time = CMSampleBufferGetPresentationTimeStamp(buffer)
+        if input === picture, time < shown { continue }
+        guard input.append(buffer) else { throw writer.error ?? Failure.exportFailed("写不进去。") }
+        // 按整百分比报（一共最多 100 次，不是每帧都往界面丢一次）
         if input === picture, duration > 0 {
-          progress(min(CMSampleBufferGetPresentationTimeStamp(buffer).seconds / duration, 1))
+          let done = Int(min(time.seconds / duration, 1) * 100)
+          if done > percent {
+            percent = done
+            progress(Double(done) / 100)
+          }
         }
       }
       if !moved { try await Task.sleep(for: .milliseconds(2)) }
     }
     if reader.status == .failed { throw reader.error ?? Failure.exportFailed("读到一半出错了。") }
+    finished = true
     await writer.finishWriting()
     if writer.status != .completed {
       throw writer.error ?? Failure.exportFailed("写到一半出错了。")

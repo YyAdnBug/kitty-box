@@ -34,11 +34,11 @@ struct VideoPreview: View {
         }
         Spacer()
         if item.trim != nil, !showsResult {
-          Button("不剪了") { setTrim(nil) }
+          Button("不剪了") { setTrim(nil) }.disabled(converting)
         }
         Button("剪一段…", systemImage: "scissors") { Task { await trim() } }
           .help("拖两头的把手选一段，只转这一段")
-          .disabled(showsResult)
+          .disabled(showsResult || converting)
       }
       .font(.system(size: 12))
       .controlSize(.small)
@@ -46,9 +46,14 @@ struct VideoPreview: View {
       .padding(.vertical, 8)
     }
     .onChange(of: item.id) { showsResult = false }
+    // 转好的没了（改了设置、换了一段、又在转）：回到原视频，不然「剪一段…」一直灰着、切换的也不见了
+    .onChange(of: item.result) { if item.result == nil { showsResult = false } }
   }
 
   private var showing: URL { showsResult ? item.result ?? item.source : item.source }
+
+  /// 正在转的这一个：这时剪了也不算数（已经按原来的在转了）
+  private var converting: Bool { if case .running = item.state { true } else { false } }
 
   /// 打开播放器自带的剪辑条；点了「修剪」就记下选的那一段
   private func trim() async {

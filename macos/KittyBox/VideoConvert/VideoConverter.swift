@@ -186,9 +186,12 @@ nonisolated enum VideoConverter {
     generator.requestedTimeToleranceBefore = tolerance
     generator.requestedTimeToleranceAfter = tolerance
 
+    // 先在内存里拼好，做完才写到旁边：直接往旁边写的话，停下时系统在那里留一个藏起来的「.名字.gif-xxxx」（2026-11-02 实测）。
+    // 最多 15 秒、长边 480，几十 MB 以内
+    let data = NSMutableData()
     guard
-      let destination = CGImageDestinationCreateWithURL(
-        output as CFURL, UTType.gif.identifier as CFString, count, nil)
+      let destination = CGImageDestinationCreateWithData(
+        data, UTType.gif.identifier as CFString, count, nil)
     else { throw Failure.failed("写不了 GIF。") }
     let loop = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]]
     CGImageDestinationSetProperties(destination, loop as CFDictionary)
@@ -207,5 +210,6 @@ nonisolated enum VideoConverter {
     guard done > 0, CGImageDestinationFinalize(destination) else {
       throw Failure.failed("一帧都没取出来。")
     }
+    try data.write(to: output)
   }
 }

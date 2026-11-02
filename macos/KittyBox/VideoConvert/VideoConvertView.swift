@@ -25,14 +25,12 @@ struct VideoConvertView: View {
           .help("停下正在转的，没开始的留着")
       } else {
         Button("转换") {
-          let (target, size) = (target, size)
-          // 各自选的那一段（剪一段…），按原文件对上
-          let trims = Dictionary(
-            model.items.compactMap { item in item.trim.map { (item.source, $0) } },
-            uniquingKeysWith: { first, _ in first })
+          let (target, size, model) = (target, size, model)
           model.start(lanes: 1) { source, progress in
-            try await VideoConverter.convert(
-              source, to: target, size: size, range: trims[source], progress: progress)
+            // 各自选的那一段（剪一段…），轮到它时再按原文件取：转着前面的时剪后面的也算数
+            let range = await model.items.first { $0.source == source }?.trim
+            return try await VideoConverter.convert(
+              source, to: target, size: size, range: range, progress: progress)
           }
         }
         .buttonStyle(BrandButtonStyle())
@@ -47,14 +45,22 @@ struct VideoConvertView: View {
       } else {
         VSplitView {
           if let item = selected {
-            VideoPreview(item: item) { model.setTrim(item.id, $0) }
-              .frame(minHeight: 220, idealHeight: 340, maxHeight: .infinity)
+            VideoPreview(item: item) { range in
+              // 剪辑条开着时轮到这一个开始转了：已经按原来的在转，这一段不算数，不记（不然转完挂着剪刀、出来的却是整段）
+              if case .running? = model.items.first(where: { $0.id == item.id })?.state {
+                NSSound.beep()
+                return
+              }
+              model.setTrim(item.id, range)
+            }
+            .frame(minHeight: 220, idealHeight: 340, maxHeight: .infinity)
           }
           table.frame(minHeight: 120, maxHeight: .infinity)
         }
       }
     } options: {
-      optionGroups
+      // 转着时不能改：改了的话正在转的还按原来的转完，却算作做好了
+      optionGroups.disabled(model.running)
     } status: {
       Text(summary)
       Spacer(minLength: 8)
@@ -150,7 +156,8 @@ struct VideoConvertView: View {
   }
 
   @ViewBuilder private var optionGroups: some View {
-    OptionGroup(title: "转成") {
+    // 选的这一种的说明是卡片下的小字（同别的组），不另起一张只装字的卡片
+    OptionGroup(title: "转成", footnote: Text(hint)) {
       Picker("转成", selection: $target) {
         ForEach(VideoConverter.Target.allCases, id: \.self) { Text($0.title).tag($0) }
       }
@@ -166,10 +173,6 @@ struct VideoConvertView: View {
         .labelsHidden()
       }
     }
-    OptionGroup(title: "说明") {
-      Text(hint).font(.callout).foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
   }
 
   private var hint: String {
@@ -177,7 +180,7 @@ struct VideoConvertView: View {
     case .h264: "H.264 哪里都能放，手机、Windows、网页都认。想把文件压小，选 720p 或 480p。"
     case .hevc: "HEVC 同样清楚、文件小一半左右；很老的设备和部分网站不认。"
     case .gif:
-      "每秒 \(Int(VideoConverter.gifFrameRate)) 帧、长边最多 \(Int(VideoConverter.gifMaxSide))、最多取前 \(Int(VideoConverter.gifMaxSeconds)) 秒，一直循环。GIF 文件大，长视频请转 MP4。"
+      "每秒 \(Int(VideoConverter.gifFrameRate)) 帧、长边最多 \(Int(VideoConverter.gifMaxSide))、最多取 \(Int(VideoConverter.gifMaxSeconds)) 秒（剪了一段就从那一段的开头取），一直循环。GIF 文件大，长视频请转 MP4。"
     case .audio: "只留声音，存成 M4A（AAC），音乐、播客、录音都能直接放。"
     }
   }

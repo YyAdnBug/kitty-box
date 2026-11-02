@@ -1,6 +1,6 @@
 // 视频台标（D4–D6）：拖进一段视频，第一帧铺在中间，在上面拖出台标的位置（可以框几处，框角的 × 删掉一处），点「导出」。
 // 导出好了画面换成前后对比（原视频和导出的第一帧，拖中间的线看），页头「对比」关掉接着框。
-// 页头：换一个视频、清空框、对比、导出；底下状态栏写框了几处、导出进度和结果。
+// 页头：换一个视频、清空框、对比、导出（导出时换成「停止」，导了一半的不留）；底下状态栏写框了几处、导出进度和结果。
 // 框存的是第一帧的像素坐标（左上为原点），画面按比例缩放显示，拖的时候换算回去。
 
 import AppKit
@@ -25,6 +25,8 @@ import SwiftUI
   /// 第一帧上的像素坐标，左上为原点
   var rects: [CGRect] = []
   private(set) var state = State.idle
+  /// 正在导出的那一次（「停止」取消它）
+  @ObservationIgnored private var exporting: Task<Void, Never>?
 
   var busy: Bool {
     switch state {
@@ -44,6 +46,11 @@ import SwiftUI
   }
 
   func load(_ url: URL) {
+    // 导出时换视频，进度和结果会落到新视频上：先「停止」（页头「换一个视频…」同样灰着；拖进来、⌘O、访达右键都走这里）
+    if case .exporting = state {
+      NSSound.beep()
+      return
+    }
     source = url
     frame = nil
     resultFrame = nil
@@ -57,28 +64,36 @@ import SwiftUI
         frame = image
         state = .idle
       } catch {
+        guard source == url else { return }
         state = .failed("读不出这段视频：" + error.localizedDescription)
       }
     }
   }
 
-  func export() async {
+  func export() {
     guard let source, !rects.isEmpty, !busy else { return }
     state = .exporting(0)
-    do {
-      let url = try await VideoDelogo.export(source, rects: rects) { fraction in
-        Task { @MainActor in
-          if case .exporting = self.state { self.state = .exporting(fraction) }
+    let rects = rects
+    exporting = Task {
+      do {
+        let url = try await VideoDelogo.export(source, rects: rects) { fraction in
+          Task { @MainActor in
+            if case .exporting = self.state { self.state = .exporting(fraction) }
+          }
         }
+        resultFrame = try? await VideoDelogo.firstFrame(of: url)
+        comparing = resultFrame != nil
+        state = .done(url)
+        NSApp.bounceIfInBackground()
+      } catch {
+        // 停下的：导了一半的文件已经删了，回到能接着框的样子
+        state = Task.isCancelled ? .idle : .failed(error.localizedDescription)
       }
-      resultFrame = try? await VideoDelogo.firstFrame(of: url)
-      comparing = resultFrame != nil
-      state = .done(url)
-      NSApp.bounceIfInBackground()
-    } catch {
-      state = .failed(error.localizedDescription)
     }
   }
+
+  /// 停下正在导出的
+  func stop() { exporting?.cancel() }
 }
 
 struct VideoMarkView: View {
@@ -98,10 +113,16 @@ struct VideoMarkView: View {
         .toggleStyle(.button)
         .help("拖中间的线对比原视频和导出的（第一帧）")
         .disabled(model.resultFrame == nil)
-      Button("导出") { Task { await model.export() } }
-        .buttonStyle(BrandButtonStyle())
-        .keyboardShortcut(.defaultAction)
-        .disabled(model.rects.isEmpty || model.busy)
+      if case .exporting = model.state {
+        Button("停止") { model.stop() }
+          .buttonStyle(BrandButtonStyle())
+          .help("停下导出，导了一半的文件不留")
+      } else {
+        Button("导出") { model.export() }
+          .buttonStyle(BrandButtonStyle())
+          .keyboardShortcut(.defaultAction)
+          .disabled(model.rects.isEmpty || model.busy)
+      }
     } content: {
       if model.source == nil {
         DropZone(

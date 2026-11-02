@@ -46,10 +46,61 @@ struct AIMarkTests {
   @Test func findsTextWatermark() throws {
     let boxes = try AIMark.locate(in: picture(label: "豆包AI生成"))
     #expect(boxes.count == 1)
-    // 字写在左下原点的 (950, 30) 起，左上原点下大约是 y 730–775；框要把它整个盖住
-    let text = CGRect(x: 955, y: 730, width: 180, height: 40)
+    // 字的墨迹（CTLineGetImageBounds 量的）在左上原点下 x 951–1118、y 736–767；框要把它整个盖住、四周再留 2 像素
+    let text = CGRect(x: 949, y: 734, width: 171, height: 35)
     #expect(boxes.first.map { $0.contains(text) } == true, "\(boxes)")
     #expect(try AIMark.locate(in: picture(label: nil)).isEmpty)
+  }
+
+  /// 大图角上又小又半透明的水印（2026-11-02 用户的海报，整张认不出）：1672×2508、水面一样的亮暗横纹，右下角半透明白字带灰边。
+  /// 整张认一个字都认不到，四个角各认一遍才认得到（常认错成「每包AI生成」「長包图生成」，贴边的短「…生成」也算）
+  /// ink：字的墨迹（左上原点，CTLineGetImageBounds 量的，四周再放 2 像素）
+  @Test(arguments: [
+    (30.0, 0.7, CGRect(x: 1389, y: 2448, width: 153, height: 31)),
+    (22.0, 0.55, CGRect(x: 1388, y: 2456, width: 114, height: 24)),
+  ])
+  func findsFaintCornerWatermark(size: CGFloat, alpha: CGFloat, ink: CGRect) throws {
+    let (width, height) = (1672, 2508)
+    let context = CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.setFillColor(CGColor(red: 0.78, green: 0.84, blue: 0.82, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    // 确定的伪随机，每次画出来一样
+    var seed: UInt64 = 42
+    func next() -> Double {
+      seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+      return Double(seed >> 33) / Double(1 << 31)
+    }
+    for _ in 0..<9000 {
+      let rect = CGRect(
+        x: next() * Double(width), y: next() * Double(height), width: 20 + next() * 160,
+        height: 1 + next() * 4)
+      let value = 0.55 + next() * 0.45
+      context.setFillColor(CGColor(red: value * 0.9, green: value, blue: value * 0.97, alpha: 0.8))
+      context.fill(rect)
+    }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    ("豆包AI生成" as NSString).draw(
+      at: NSPoint(x: 1390, y: 28),
+      withAttributes: [
+        .font: NSFont.systemFont(ofSize: size, weight: .bold),
+        .foregroundColor: NSColor.white.withAlphaComponent(alpha),
+        .strokeColor: NSColor(white: 0.45, alpha: 0.5), .strokeWidth: -2.0,
+      ])
+    NSGraphicsContext.restoreGraphicsState()
+    let boxes = try AIMark.locate(in: context.makeImage()!)
+    #expect(boxes.count == 1, "\(boxes)")
+    #expect(boxes.first.map { $0.contains(ink) } == true, "\(boxes)")
+  }
+
+  @Test func shortGeneratedLabel() {
+    #expect(AIMark.isAILabel(AIMark.fold("虹生成")))
+    #expect(AIMark.isAILabel(AIMark.fold("三包A生成")))
+    #expect(!AIMark.isAILabel(AIMark.fold("本页内容由系统自动生成，仅供参考")))
+    #expect(!AIMark.isAILabel(AIMark.fold("2026 年 10 月")))
   }
 
   /// 用户加的词：分隔符认中英文逗号、顿号、换行，空格留在词里；整张图里找（字在正中间），不加就不认

@@ -12,7 +12,7 @@ enum Paste {
   static func perform() {
     let pasteboard = NSPasteboard.general
     let typing = NSApp.keyWindow?.firstResponder is NSText
-    let pasteText = { NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) }
+    let pasteText = { _ = NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) }
     if typing, !hasFiles(pasteboard), pasteboard.string(forType: .string) != nil {
       pasteText()
       return

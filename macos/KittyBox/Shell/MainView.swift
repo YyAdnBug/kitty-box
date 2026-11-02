@@ -62,15 +62,15 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
 
   var takesMany: Bool { self != .erase && self != .video }
 
-  /// 页头标题下面的一句话
+  /// 页头标题下面的一句话：最小窗口（940 宽）里也放得下，不被截掉
   var summary: String {
     switch self {
-    case .pack: "打成 zip 或 7z，可设密码；系统杂文件自动去掉，包放在原文件旁边"
-    case .unpack: "zip、7z、RAR 等都行，解到旁边，中文名不乱码"
-    case .convert: "HEIC、WebP、RAW 等互转，拍摄信息带过去，结果放在原图旁边"
-    case .videoConvert: "转成 MP4、HEVC、GIF，或只取声音；能压到 1080p、720p"
-    case .cutout: "自动抠出主体，背景换成透明或白色；头发丝、绒毛也抠得干净"
-    case .aiMark: "一批图自动去掉 AI 水印和你指定的字：Gemini 星标按原理还原，字样用模型补掉"
+    case .pack: "打成 zip 或 7z，可设密码，自动去掉系统杂文件"
+    case .unpack: "zip、7z、RAR 等都能解，中文名不乱码"
+    case .convert: "HEIC、WebP、RAW 等互转，拍摄信息带过去"
+    case .videoConvert: "转成 MP4、HEVC、GIF，或只取声音"
+    case .cutout: "自动抠出主体，背景换成透明或白色"
+    case .aiMark: "一批图自动去掉 AI 水印，也能去掉指定的字"
     case .erase: "涂住水印、路人或杂物，或点选图上的字，松手就自动补上周围的样子"
     case .video: "在第一帧上框住固定的台标，导出时逐帧补上"
     }
@@ -113,10 +113,8 @@ struct MainView: View {
           }
         }
       }
-      // 标题栏是透明的（KittyBoxApp）：侧边栏顶上红绿灯那一排按住能拖窗口
-      .overlay(alignment: .top) {
-        Color.clear.frame(height: 28).contentShape(Rectangle()).gesture(WindowDragGesture())
-      }
+      // 标题栏是透明的（KittyBoxApp）：侧边栏顶上红绿灯那一排按住能拖窗口、双击缩放
+      .overlay(alignment: .top) { Color.clear.frame(height: 28).windowDragArea() }
       .toolbar(removing: .sidebarToggle)
       .safeAreaInset(edge: .bottom) {
         if let release = Updater.shared.available { updateCard(release) }
@@ -176,7 +174,8 @@ struct MainView: View {
   /// 侧边栏的角标：还没处理的有几个（0 不显示）
   private func badge(_ tool: Tool) -> Int {
     switch tool {
-    case .pack: navigator.pack.items.count
+    // 打好了就不算没处理的（表格里的还留着，看得到打了哪些）
+    case .pack: if case .success = navigator.pack.result { 0 } else { navigator.pack.items.count }
     case .unpack: navigator.unpack.jobs.count { !$0.isFinished }
     case .convert: navigator.convert.items.count { $0.result == nil }
     case .videoConvert: navigator.videoConvert.items.count { $0.result == nil }
@@ -212,11 +211,19 @@ private struct SidebarRow: View {
   let drop: ([URL]) -> Void
   @State private var targeted = false
   @Environment(\.controlActiveState) private var activeState
+  /// 系统设置 › 外观「侧边栏图标大小」：字跟着系统变，色块和行高也跟着
+  @Environment(\.sidebarRowSize) private var rowSize
 
   var body: some View {
     let emphasized = isSelected && activeState == .key
+    let (tile, height): (CGFloat, CGFloat) =
+      switch rowSize {
+      case .small: (16, 24)
+      case .large: (24, 36)
+      default: (20, 30)
+      }
     HStack(spacing: 8) {
-      KindTile(symbol: tool.symbol, color: tool.color, size: 20)
+      KindTile(symbol: tool.symbol, color: tool.color, size: tile)
       // 只在品牌粉上设字色：显式设了前景会盖掉侧栏自己的字色（后台窗口变灰那套）
       if emphasized {
         Text(tool.title).foregroundStyle(Style.onBrand)
@@ -228,17 +235,20 @@ private struct SidebarRow: View {
         Text(badge.formatted())
           .font(.system(size: 11, weight: .medium))
           .monospacedDigit()
-          .foregroundStyle(emphasized ? Style.onBrand.opacity(0.85) : Color.secondary)
+          .foregroundStyle(emphasized ? Style.onBrand : Color.secondary)
+          .accessibilityHidden(true)
       }
     }
     .padding(.horizontal, 8)
-    .frame(height: 30)
+    .frame(height: height)
     .background { highlight(emphasized: emphasized) }
     .contentShape(Rectangle())
     .background(NativeHighlightOff())
     .padding(.horizontal, 10)
     .listRowInsets(EdgeInsets())
     .accessibilityElement(children: .combine)
+    // 角标不并进名字（旁白只念「打包，2」），当成值念出来是什么
+    .accessibilityValue(badge > 0 ? "\(badge) 个没做完" : "")
     .dropDestination(for: URL.self) { urls, _ in
       drop(urls)
       return true
@@ -248,7 +258,7 @@ private struct SidebarRow: View {
   }
 
   @ViewBuilder private func highlight(emphasized: Bool) -> some View {
-    let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
     if targeted {
       shape.fill(tool.color.opacity(0.3))
     } else if isSelected {

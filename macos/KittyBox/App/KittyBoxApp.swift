@@ -1,7 +1,9 @@
 // 应用入口：普通窗口 App（A1：有程序坞图标，文件能拖上去；不像 Kitty Tools 只在菜单栏）。设置窗口（SettingsView，⌘,）。
 // 主窗口是 MainView（侧边栏 + 工具页），关掉后点程序坞图标、或往图标上拖文件，会再打开它；另有关于窗口（AboutView）。
 // App 菜单的「关于 Kitty Box」换成自己的关于窗口，下面加「检查更新…」；打开 App 10 秒后自动查一次更新（Updater）。
-// 编辑菜单的「粘贴」换成自己的：⌘V 能把文件交给工具（Paste）；文件菜单「添加文件…」⌘O；「工具」菜单 ⌘1–⌘6 切工具。
+// 关于窗口像系统的关于面板：不进「窗口」菜单、不能最小化、下次打开 App 不恢复，奶油底铺满（连标题栏那一条）。
+// 编辑菜单的「粘贴」换成自己的：⌘V 能把文件交给工具（Paste）；文件菜单「添加文件…」⌘O；「工具」菜单 ⌘1–⌘8 切工具；
+// 帮助菜单换成打开仓库的说明页、报告问题（没有帮助手册，系统默认那一项只会说「帮助不可用」）。
 
 import AppKit
 import SwiftUI
@@ -33,12 +35,22 @@ struct KittyBoxApp: App {
 
     Window("关于 Kitty Box", id: Self.aboutID) {
       AboutView()
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .containerBackground(Style.brandCream, for: .window)
+        .windowMinimizeBehavior(.disabled)
     }
     .windowResizability(.contentSize)
+    .restorationBehavior(.disabled)
+    .defaultPosition(.center)
+    // 不进「窗口」菜单；openWindow(id:) 照样开得了
+    .commandsRemoved()
   }
 }
 
 private struct AppCommands: Commands {
+  private static let readme = URL(string: "https://github.com/YyAdnBug/kitty-box#readme")!
+  private static let issues = URL(string: "https://github.com/YyAdnBug/kitty-box/issues/new")!
   @Environment(\.openWindow) private var openWindow
 
   var body: some Commands {
@@ -74,6 +86,11 @@ private struct AppCommands: Commands {
         openWindow(id: KittyBoxApp.aboutID)
         Task { await Updater.shared.check() }
       }
+    }
+    CommandGroup(replacing: .help) {
+      // ⌘? 同系统默认的那一项：换掉它时快捷键别跟着丢
+      Button("Kitty Box 帮助") { NSWorkspace.shared.open(Self.readme) }.keyboardShortcut("?")
+      Button("报告问题…") { NSWorkspace.shared.open(Self.issues) }
     }
   }
 }

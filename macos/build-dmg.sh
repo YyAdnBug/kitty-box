@@ -10,6 +10,8 @@
 #   第一次跑会问能不能控制访达；不允许或 DMG_LAYOUT=0 时照样出包，只是没有背景和摆位。
 set -euo pipefail
 M="$(cd "$(dirname "$0")" && pwd)"; OUT="$M/build"; CHANGELOG="$M/KittyBox/Resources/changelog.json"
+# 格式不过不出包（红线 §4：lint 无输出才算过，--strict 下有一条就退出非 0）
+xcrun swift-format lint --strict -r "$M/KittyBox" "$M/KittyBoxTests" "$M/KittyBoxFinder"
 rm -rf "$OUT/KittyBox.xcarchive" "$OUT/dmg" && mkdir -p "$OUT/dmg"
 xcodebuild archive -project "$M/KittyBox.xcodeproj" -scheme KittyBox -configuration Release \
   -destination 'generic/platform=macOS' -archivePath "$OUT/KittyBox.xcarchive" -quiet
@@ -18,6 +20,8 @@ NAME=$(basename "$APP" .app)
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
 jq -e --arg v "$VERSION" 'any(.[]; .version == $v)' "$CHANGELOG" >/dev/null \
   || { echo "changelog.json 缺少 $VERSION 条目"; exit 1; }
+# 每版留一份符号（发布包 strip 过）：下次打包会删掉 archive，这一版的崩溃报告靠它还原函数名
+rm -rf "$OUT/dSYMs/$VERSION" && mkdir -p "$OUT/dSYMs" && ditto "$OUT/KittyBox.xcarchive/dSYMs" "$OUT/dSYMs/$VERSION"
 codesign --verify --deep --strict --verbose=2 "$APP"
 # 先存变量再判断：pipefail 下 grep -q 提前退出会让管道报错，导致漏报
 ENT=$(codesign -d --entitlements - "$APP" 2>&1 || true)
@@ -28,8 +32,8 @@ lipo -archs "$APP/Contents/MacOS/$NAME"
 codesign --verify --strict \
   -R '=anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' "$APP/Contents/MacOS/7zz"
 [[ "$(codesign -dv "$APP/Contents/MacOS/7zz" 2>&1)" == *"(runtime)"* ]] || { echo "7zz 没开强化运行时"; exit 1; }
-# 画笔擦除的 LaMa 模型不随包（第一次用时下载）：别不小心打进来
-[[ ! -e "$APP/Contents/Resources/LaMa.mlmodelc" ]] || { echo "LaMa 模型不该打进包"; exit 1; }
+# 补图、抠图的模型都不随包（用时下载）：别不小心打进来
+[[ -z "$(find "$APP" -name '*.mlmodelc' -o -name '*.mlpackage')" ]] || { echo "模型不该打进包"; exit 1; }
 # 访达扩展（M9）：在 PlugIns 里、本团队签名、开着沙盒（访达扩展必须）
 EXT="$APP/Contents/PlugIns/KittyBoxFinder.appex"
 codesign --verify --strict -R '=anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' "$EXT"
@@ -45,6 +49,8 @@ else
   # 同名卷已经挂着（上次没卸掉）时访达会摆错窗口：先卸
   [[ -d "/Volumes/$NAME" ]] && hdiutil detach "/Volumes/$NAME" -force >/dev/null || true
   MOUNT=$(hdiutil attach "$RW" -readwrite -noverify -noautoopen | awk -F'\t' '/\/Volumes\// {print $NF}')
+  # 没挂上时 MOUNT 是空的，下面的 rm -rf "$MOUNT/.fseventsd" 就成了删根目录下的
+  [[ -n "$MOUNT" ]] || { echo "可写映像没挂上"; exit 1; }
   # 窗口 600×400（加标题栏，正好是背景的设计区）、图标 112、App 在 (150, 205)、「应用程序」在 (450, 205)，和背景图对齐
   osascript <<APPLESCRIPT || echo "访达摆位没成功（没有控制访达的权限？），DMG 照样出，只是没有背景"
 tell application "Finder"

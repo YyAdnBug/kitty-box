@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import os
 
 struct Changelog: Decodable, Identifiable {
   struct Change: Decodable, Hashable {
@@ -18,11 +19,22 @@ struct Changelog: Decodable, Identifiable {
 
   var id: String { version }
 
+  /// date（2026-10-30）读成日期，显示时按系统的写法
+  var day: Date? {
+    try? Date(date, strategy: Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
+  }
+
   static func load() -> [Changelog] {
-    guard let url = Bundle.main.url(forResource: "changelog", withExtension: "json"),
-      let data = try? Data(contentsOf: url)
-    else { return [] }
-    return (try? JSONDecoder().decode([Changelog].self, from: data)) ?? []
+    do {
+      guard let url = Bundle.main.url(forResource: "changelog", withExtension: "json") else {
+        return []
+      }
+      return try JSONDecoder().decode([Changelog].self, from: Data(contentsOf: url))
+    } catch {
+      // 解不开时更新日志是空的：记一笔
+      Updater.log.error("更新日志解不开：\(error, privacy: .public)")
+      return []
+    }
   }
 }
 
@@ -37,6 +49,7 @@ struct AboutView: View {
     VStack(spacing: 0) {
       VStack(spacing: 10) {
         Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
+          .accessibilityHidden(true)
         Text("Kitty Box").font(.system(size: 26, weight: .bold, design: .rounded))
         HStack(spacing: 8) {
           Text("版本 \(version)")
@@ -62,7 +75,8 @@ struct AboutView: View {
             VStack(alignment: .leading, spacing: 6) {
               HStack(alignment: .firstTextBaseline) {
                 Text(entry.version).font(.headline)
-                Text(entry.date).font(.caption).foregroundStyle(.secondary)
+                Text(entry.day?.formatted(date: .long, time: .omitted) ?? entry.date)
+                  .font(.caption).foregroundStyle(.secondary)
               }
               Text(entry.summary).font(.callout)
               ForEach(entry.changes, id: \.self) { change in
@@ -75,7 +89,7 @@ struct AboutView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .cardSurface()
+            .cardSurface(onCream: true)
           }
           // verbatim：别把名字里的符号当 Markdown
           Text(
@@ -107,7 +121,12 @@ struct AboutView: View {
         ProgressView().controlSize(.small)
         Text("正在检查…").foregroundStyle(.secondary)
       case .upToDate:
-        Label("已经是最新版", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        // 只染图标：系统绿、红当字在奶油底上对比度不够
+        Label {
+          Text("已经是最新版")
+        } icon: {
+          Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        }
         Button("再查一次") { Task { await updater.check() } }.buttonStyle(.link)
       case .available(let release):
         Text("有新版本 \(release.version)")
@@ -124,8 +143,11 @@ struct AboutView: View {
           Text("正在安装 \(release.version)…").foregroundStyle(.secondary)
         }
       case .failed(let reason):
-        Label(reason, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
-          .lineLimit(2)
+        Label {
+          Text(reason).lineLimit(2)
+        } icon: {
+          Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+        }
         Button("再试一次") { Task { await updater.check() } }.buttonStyle(.link)
         Link("去发布页", destination: Updater.releasesPage).font(.caption)
       }

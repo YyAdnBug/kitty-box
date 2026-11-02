@@ -1,5 +1,6 @@
 // Navigator：收进来的文件往哪送——当前工具全收得了就给它，有图片或视频就问交给谁，别的交给打包；拖进工具页 / 粘贴先给当前工具；
-// 哪些工具能收这批文件；上次选的工具记在偏好里（用临时偏好域，不写用户的）；访达「服务」菜单交给指明的工具。
+// 哪些工具能收这批文件；文件夹交给打包；拖到侧边栏某一项就给那一项；上次选的工具记在偏好里（用临时偏好域，不写用户的）；
+// 访达「服务」菜单交给指明的工具。
 // （全是压缩包直接解压那一支会真的开始解，留给 ArchiverTests 和手测。）
 
 import AppKit
@@ -59,6 +60,39 @@ final class NavigatorTests {
     #expect(navigator.pending.isEmpty)
     #expect(navigator.tool == .pack)
     #expect(navigator.pack.items == [note])
+  }
+
+  /// 图片和视频一起来：问交给谁，只列收得了的（解压收不了）
+  @Test func mixedImagesAndVideosAsk() {
+    let navigator = make(on: .unpack)
+    navigator.route([photo, movie])
+    #expect(navigator.pending == [photo, movie])
+    #expect(
+      Tool.allCases.filter { navigator.accepts($0, navigator.pending) }
+        == Tool.allCases.filter { $0 != .unpack })
+  }
+
+  /// 文件夹不是图片、视频、压缩包：拖进别的工具页、从程序坞来，都交给打包
+  @Test func foldersGoToPack() {
+    let folder = URL(filePath: "/tmp/kittybox-nav/资料", directoryHint: .isDirectory)
+    let navigator = make(on: .convert)
+    navigator.give([folder])
+    #expect(navigator.tool == .pack)
+    #expect(navigator.pack.items == [folder])
+    let docked = make(on: .aiMark)
+    docked.route([folder, note])
+    #expect(docked.pending.isEmpty)
+    #expect(docked.pack.items == [folder, note])
+  }
+
+  /// 拖到侧边栏某一项：给那一项，收不了的数一下（不另外分派）
+  @Test func droppedOnASidebarRowGoesToThatRow() {
+    let navigator = make(on: .pack)
+    navigator.open(.convert, with: [photo, note])
+    #expect(navigator.tool == .convert)
+    #expect(navigator.convert.items.map(\.source) == [photo])
+    #expect(navigator.convert.skipped == 1)
+    #expect(navigator.pack.items.isEmpty)
   }
 
   @Test func droppedOnAPageGoesToThatTool() {
@@ -123,11 +157,13 @@ final class NavigatorTests {
       URLQueryItem(name: "tool", value: "videoConvert"),
       URLQueryItem(name: "file", value: "/tmp/假期 视频.mov"),
       URLQueryItem(name: "file", value: "/tmp/a&b=c.mp4"),
+      URLQueryItem(name: "file", value: "/tmp/1+1 #2 50%?.mp4"),
     ]
     let url = try #require(link.url)
     let request = try #require(Services.request(from: url))
     #expect(request.tool == .videoConvert)
-    #expect(request.files.map(\.path) == ["/tmp/假期 视频.mov", "/tmp/a&b=c.mp4"])
+    #expect(
+      request.files.map(\.path) == ["/tmp/假期 视频.mov", "/tmp/a&b=c.mp4", "/tmp/1+1 #2 50%?.mp4"])
     #expect(Services.request(from: URL(string: "other://open?tool=pack&file=/tmp/a")!) == nil)
     #expect(Services.request(from: URL(string: "\(scheme)://open?tool=nope&file=/tmp/a")!) == nil)
     #expect(Services.request(from: URL(string: "\(scheme)://open?tool=pack")!) == nil)

@@ -203,10 +203,21 @@ private struct HairlineBorder<S: InsettableShape>: View {
 }
 
 /// 内容卡片表面（Whisker §2）：圆角 card；浅色 white 0.55、深色 white 0.06 底 + 发丝线描边 + 深色的顶部高光；
-/// 不加阴影（§3 层级：卡片不加阴影）。降低透明度时底换成 windowBackground 0.9（只在 15；26 交给玻璃）
+/// 不加阴影（§3 层级：卡片不加阴影）。降低透明度时底换成 windowBackground 0.9（只在 15；26 交给玻璃）。
+/// 26 起浅色的窗口底是纯白，白 0.55 垫上去等于没有：浅色改垫系统的四级填充（同设置窗口分组框的那层灰）。
+/// 奶油底上（关于窗口）照旧白 0.55：灰垫在奶油上卡片反而比底深，不像 Kitty Tools 那样浮起来
 struct CardSurface: ViewModifier {
+  var onCream = false
   @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  private var lightFill: Color {
+    if #available(macOS 26, *), !onCream {
+      Color(nsColor: .quaternarySystemFill)
+    } else {
+      .white.opacity(0.55)
+    }
+  }
 
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
@@ -217,7 +228,7 @@ struct CardSurface: ViewModifier {
         shape.fill(
           opaque
             ? Color(nsColor: .windowBackgroundColor).opacity(0.9)
-            : .white.opacity(dark ? 0.06 : 0.55))
+            : dark ? .white.opacity(0.06) : lightFill)
       }
       .overlay {
         shape.hairlineBorder()
@@ -236,7 +247,11 @@ struct CardSurface: ViewModifier {
 
 extension View {
   /// 内容卡片表面，见 `CardSurface`
-  func cardSurface() -> some View { modifier(CardSurface()) }
+  func cardSurface(onCream: Bool = false) -> some View { modifier(CardSurface(onCream: onCream)) }
+
+  /// 文字链接（在访达中显示、停止、查看…）：链接样式的字色取外面的前景色，放进整排 .secondary 的状态栏就成了灰字、
+  /// 看不出能点（2026-11-02 屏外取色：灰 146 / 蓝 56,125,220），所以显式设回链接色
+  func textLink() -> some View { buttonStyle(.link).foregroundStyle(.link) }
 }
 
 extension View {

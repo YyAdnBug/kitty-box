@@ -17,7 +17,7 @@ struct DoneLine: View {
       }
       .layoutPriority(1)
       Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-        .buttonStyle(.link)
+        .textLink()
         .fixedSize()
     }
   }
@@ -44,13 +44,14 @@ struct RunningProgress: View {
   var body: some View {
     HStack(spacing: 8) {
       if let value {
-        ProgressView(value: value).frame(width: 100)
+        // 旁白只念百分比时不知道是什么在进行：带上「正在解压」这类名字
+        ProgressView(value: value).frame(width: 100).accessibilityLabel(label)
         Text(value.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
       } else {
         ProgressView().controlSize(.mini)
         Text(label + "…")
       }
-      Button("停止", action: stop).buttonStyle(.link)
+      Button("停止", action: stop).textLink()
     }
   }
 }

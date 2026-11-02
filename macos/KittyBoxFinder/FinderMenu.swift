@@ -3,14 +3,19 @@
 //   点了用 App 自己的网址把工具和文件交给 App：<App 的 bundle id>://open?tool=pack&file=/a&file=/b（App 那边是 Services.request）。
 // - 文件夹空白处右键：「新建文件 ▸」文本文件、Markdown、Word、Excel、PPT（模板在 Templates/，Word 用系统 textutil 转的，
 //   Excel、PPT 是手写的最小 Office Open XML），再加上「新建文件模板」文件夹里用户自己放的任何文件（放什么就能新建什么）。
-//   拷一份到这个文件夹，重名加「 2」。
+//   拷一份到这个文件夹，重名加「 2」，日期是新建的时候（不带模板的）；拷不进去（沙盒例外以外的地方、只读的盘）响一声。
 // 扩展必须在沙盒里：交给 App 的那几项不碰文件；新建文件要写用户的文件夹，靠 Config/Finder.entitlements 里的例外（home 和外接盘）。
 // 看所有位置（directoryURLs 设成根目录），不只是某几个文件夹里才有菜单。
 // 要在 系统设置 › 通用 › 登录项与扩展 › 访达 里打开它（App 的设置 › 通用 › 访达 有按钮）。
 
 import AppKit
 import FinderSync
+import ImageIO
 import UniformTypeIdentifiers
+import os
+
+/// 拷不进去这类失败记一笔（扩展没有界面，Console 里按 subsystem 看）
+private let log = Logger(subsystem: "com.yy.kitty-box", category: "finder")
 
 final class FinderMenu: FIFinderSync {
   /// 选中的文件交给 App 的哪个工具（rawValue 就是 App 的 Tool.rawValue）
@@ -35,10 +40,15 @@ final class FinderMenu: FIFinderSync {
       return switch self {
       case .pack: true
       case .unpack: Self.archives.contains(ext) || (ext.count == 3 && ext.allSatisfy(\.isNumber))
-      case .convert, .aiMark, .cutout: type?.conforms(to: .image) == true
+      case .convert, .aiMark, .cutout:
+        type.map { type in Self.images.contains { type.conforms(to: $0) } } == true
       case .videoConvert: type?.conforms(to: .movie) == true
       }
     }
+
+    /// 系统读得了的图片（同 ImageConverter.canRead）：只看「是图片」的话 SVG、AI、EMF 也算，App 那边却收不了
+    private static let images = (CGImageSourceCopyTypeIdentifiers() as? [String] ?? [])
+      .compactMap { UTType($0) }
 
     /// ponytail: 抄的 Archiver.archiveExtensions，那边加了这里跟着加
     private static let archives: Set<String> = [
@@ -149,7 +159,16 @@ final class FinderMenu: FIFinderSync {
       target = folder.appending(path: "\(stem) \(number)" + (ext.isEmpty ? "" : "." + ext))
       number += 1
     }
-    try? FileManager.default.copyItem(at: template, to: target)
+    do {
+      try FileManager.default.copyItem(at: template, to: target)
+    } catch {
+      log.error("新建文件失败：\(error, privacy: .public)")
+      NSSound.beep()
+      return
+    }
+    // 拷贝会带上模板的日期：新建的文件是现在建的，不然在「最近使用」、按日期排时排到老文件里
+    try? FileManager.default.setAttributes(
+      [.creationDate: Date.now, .modificationDate: Date.now], ofItemAtPath: target.path)
   }
 
   @objc private func showTemplates(_ sender: AnyObject?) {

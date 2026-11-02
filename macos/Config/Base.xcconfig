@@ -38,3 +38,6 @@ COMBINE_HIDPI_IMAGES = YES
 ENABLE_PREVIEWS = YES
 ENABLE_USER_SCRIPT_SANDBOXING = YES
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+// 同 Xcode 模板 project 层：拷贝阶段不 strip。拷进包时就签名的访达扩展本来也 strip 不了，每次构建只多三条 warning；
+// App 自己的可执行文件 archive 时照常 strip（STRIP_INSTALLED_PRODUCT）
+COPY_PHASE_STRIP = NO

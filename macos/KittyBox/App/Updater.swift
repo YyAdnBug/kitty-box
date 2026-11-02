@@ -1,6 +1,7 @@
-// 应用内更新：从 Kitty Tools 的 App/Updater.swift 摘出核心（读 latest release、比版本号、下载、验签、换掉、重新打开），
-// 去掉它接刘海岛、菜单栏角标的部分。读本仓库 github.com/YyAdnBug/kitty-box 的 latest release（tag macos-v*）。
-// 打开 App 10 秒后查一次；App 菜单「检查更新…」和关于窗口也能查。有新版本时首页顶上一条、关于窗口里「更新并重新打开」。
+// 应用内更新：从 Kitty Tools 的 App/Updater.swift 摘出核心（读 release、比版本号、下载、验签、换掉、重新打开），
+// 去掉它接刘海岛、菜单栏角标的部分。读本仓库 github.com/YyAdnBug/kitty-box 的 release 列表，挑最新的 macos-v*：
+// 不用 /releases/latest——Windows 版也发在这个仓库（windows-v*），latest 可能是它；一个 release 都没有时它回 404。
+// 打开 App 10 秒后查一次；App 菜单「检查更新…」和关于窗口也能查。有新版本时侧边栏底下一张小卡、关于窗口里「更新并重新打开」。
 // 更新 = 下载 release 里的 *_arm64.zip → ditto 解到 App 所在卷的临时目录 → 校验 bundle id、版本号和签名（Apple 签发、
 // 本团队 HTX9F4KG39 的证书）→ 原子地换掉正在运行的 .app → 等本进程退出后重新打开。解包、验签交给系统的 ditto / codesign，
 // 在进程外跑。App 自己用 URLSession 下载的文件不带隔离标记，换上的新版不会再被 Gatekeeper 拦。
@@ -8,6 +9,7 @@
 
 import AppKit
 import Observation
+import os
 
 @Observable final class Updater {
   struct Release: Equatable {
@@ -35,8 +37,9 @@ import Observation
 
   static let bundleID = "com.yy.kitty-box"
   static let releasesPage = URL(string: "https://github.com/YyAdnBug/kitty-box/releases")!
-  private static let latest = URL(
-    string: "https://api.github.com/repos/YyAdnBug/kitty-box/releases/latest")!
+  /// ponytail: 只看最近 100 个 release（一页），Windows 版连发 100 个之后 mac 版才会漏看
+  private static let releases = URL(
+    string: "https://api.github.com/repos/YyAdnBug/kitty-box/releases?per_page=100")!
   /// 新包必须满足的签名要求：同一个 bundle id、Apple 签发、本团队的证书
   static let requirement =
     "=identifier \"\(bundleID)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
@@ -69,16 +72,14 @@ import Observation
     if case .installing = state { return }
     state = .checking
     do {
-      var request = URLRequest(url: Self.latest)
-      request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-      let (data, _) = try await URLSession.shared.data(for: request)
       let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-      if let release = try Self.release(from: data), Self.isNewer(release.version, than: current) {
+      if let release = try await Self.latest(), Self.isNewer(release.version, than: current) {
         state = .available(release)
       } else {
         state = .upToDate
       }
     } catch {
+      Self.log.error("检查更新失败：\(error, privacy: .public)")
       state = .failed("没查成：" + error.localizedDescription)
     }
   }
@@ -97,14 +98,28 @@ import Observation
       try Self.relaunch(Bundle.main.bundleURL)
       NSApp.terminate(nil)
     } catch {
+      Self.log.error("更新失败：\(error, privacy: .public)")
       progress = nil
       state = .failed(error.localizedDescription)
     }
   }
 
+  /// 读 release 列表，挑出最新的 mac 版；一个都没有是 nil
+  static func latest() async throws -> Release? {
+    var request = URLRequest(url: releases)
+    request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    // 404、限流这类回的是一段说明，不是 release 列表：照实说，别当成「解不开」
+    if let status = (response as? HTTPURLResponse)?.statusCode, status != 200 {
+      throw UpdateError(status == 403 || status == 429 ? "查得太勤了，过一会儿再试" : "服务器回了 \(status)")
+    }
+    return try release(from: data)
+  }
+
   // MARK: 纯函数
 
-  /// GitHub「latest release」的 JSON → 版本、更新包、发布页。不是 macos-v* 的 tag、没有 https 的 *_arm64.zip 时 nil
+  /// GitHub release 列表的 JSON → 版本号最大的 mac 版：tag 是 macos-v*、不是预发布、带 https 的 *_arm64.zip。
+  /// 别的（windows-v*）不看；一个都没有（列表是空的）时 nil，算「已经是最新版」
   nonisolated static func release(from data: Data) throws -> Release? {
     struct Payload: Decodable {
       struct Asset: Decodable {
@@ -113,19 +128,22 @@ import Observation
       }
       let tagName: String
       let htmlUrl: URL
+      let prerelease: Bool
       let assets: [Asset]
     }
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
-    let payload = try decoder.decode(Payload.self, from: data)
     let prefix = "macos-v"
-    guard payload.tagName.hasPrefix(prefix),
-      let asset = payload.assets.first(where: { $0.name.hasSuffix("_arm64.zip") }),
-      asset.browserDownloadUrl.scheme == "https"
-    else { return nil }
-    return Release(
-      version: String(payload.tagName.dropFirst(prefix.count)), archive: asset.browserDownloadUrl,
-      page: payload.htmlUrl)
+    return try decoder.decode([Payload].self, from: data).compactMap { payload -> Release? in
+      guard payload.tagName.hasPrefix(prefix), !payload.prerelease,
+        let asset = payload.assets.first(where: { $0.name.hasSuffix("_arm64.zip") }),
+        asset.browserDownloadUrl.scheme == "https"
+      else { return nil }
+      return Release(
+        version: String(payload.tagName.dropFirst(prefix.count)), archive: asset.browserDownloadUrl,
+        page: payload.htmlUrl)
+    }
+    .max { isNewer($1.version, than: $0.version) }
   }
 
   /// 按数字逐段比（0.1.10 比 0.1.9 新）
@@ -194,6 +212,11 @@ import Observation
   private static func run(_ tool: String, _ arguments: [String], failure: String) async throws {
     guard try await Subprocess.run(tool, arguments).status == 0 else { throw UpdateError(failure) }
   }
+}
+
+extension Updater {
+  /// 检查、安装失败记一笔（Console 里按 subsystem 看）：自动检查没开关于窗口时，界面上看不到
+  static let log = Logger(subsystem: "com.yy.kitty-box", category: "update")
 }
 
 struct UpdateError: LocalizedError {

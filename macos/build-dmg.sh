@@ -8,6 +8,7 @@
 #   整张 2560×1600 pt、@1x + @2x，窗口拉大也不露白；由 swift macos/brand-icons.swift 生成，字标写死 Kitty Box，改名要改那个脚本重跑），
 #   用 hdiutil 做可写映像 + AppleScript 让访达摆位置（隐藏的 .background 挪到默认窗口外、删掉 .fseventsd），再压成只读。
 #   卷图标是 App 的图标：App 里的 AppIcon.icns 拷成卷根的 .VolumeIcon.icns，卷根打上「有自定图标」的标记。
+#   要在访达摆完位置之后再放：macOS 27 的访达打开、摆位时会删掉 .VolumeIcon.icns、清掉这个标记（2026-11-02 实测）。
 #   第一次跑会问能不能控制访达；不允许或 DMG_LAYOUT=0 时照样出包，只是没有背景和摆位。
 set -euo pipefail
 M="$(cd "$(dirname "$0")" && pwd)"; OUT="$M/build"; CHANGELOG="$M/KittyBox/Resources/changelog.json"
@@ -45,7 +46,6 @@ if [[ "${DMG_LAYOUT:-1}" == 0 ]]; then
   hdiutil create -volname "$NAME" -srcfolder "$OUT/dmg" -format UDZO -ov "$DMG"
 else
   mkdir -p "$OUT/dmg/.background" && cp "$M/Config/dmg-background.tiff" "$OUT/dmg/.background/background.tiff"
-  cp "$APP/Contents/Resources/AppIcon.icns" "$OUT/dmg/.VolumeIcon.icns"
   RW="$OUT/rw.dmg"
   hdiutil create -volname "$NAME" -srcfolder "$OUT/dmg" -format UDRW -ov "$RW"
   # 同名卷已经挂着（上次没卸掉）时访达会摆错窗口：先卸
@@ -53,9 +53,6 @@ else
   MOUNT=$(hdiutil attach "$RW" -readwrite -noverify -noautoopen | awk -F'\t' '/\/Volumes\// {print $NF}')
   # 没挂上时 MOUNT 是空的，下面的 rm -rf "$MOUNT/.fseventsd" 就成了删根目录下的
   [[ -n "$MOUNT" ]] || { echo "可写映像没挂上"; exit 1; }
-  # 卷根的 FinderInfo 打上 kHasCustomIcon（第 9 字节 0x04，即 Finder 标志 0x0400）：访达才用 .VolumeIcon.icns 当卷图标。
-  # 不用 SetFile（要另装命令行工具），xattr 系统自带；32 字节，其余全 0
-  xattr -wx com.apple.FinderInfo "$(printf '%016d0400%044d' 0 0)" "$MOUNT"
   # 窗口 600×400（加标题栏，正好是背景的设计区）、图标 112、App 在 (150, 205)、「应用程序」在 (450, 205)，和背景图对齐
   osascript <<APPLESCRIPT || echo "访达摆位没成功（没有控制访达的权限？），DMG 照样出，只是没有背景"
 tell application "Finder"
@@ -72,11 +69,10 @@ tell application "Finder"
     set background picture of viewOptions to file ".background:background.tiff"
     set position of item "$NAME.app" of container window to {150, 205}
     set position of item "Applications" of container window to {450, 205}
-    -- 开了「显示隐藏文件」的访达会把 .background、.VolumeIcon.icns 画出来：挪到默认窗口右边（扩展背景上），不压字标和图标；
+    -- 开了「显示隐藏文件」的访达会把 .background 画出来：挪到默认窗口右边（扩展背景上），不压字标和图标；
     -- 没开时访达拿不到这个隐藏项，忽略
     try
       set position of item ".background" of container window to {860, 205}
-      set position of item ".VolumeIcon.icns" of container window to {860, 330}
     end try
     update without registering applications
     delay 1
@@ -84,6 +80,11 @@ tell application "Finder"
   end tell
 end tell
 APPLESCRIPT
+  # 卷图标（访达摆完再放，见开头）：卷根的 FinderInfo 打上 kHasCustomIcon（第 9 字节 0x04，即 Finder 标志 0x0400），
+  # 访达才用 .VolumeIcon.icns 当卷图标。不用 SetFile（要另装命令行工具），xattr 系统自带；32 字节，其余全 0。
+  # ponytail: 开了「显示隐藏文件」时 .VolumeIcon.icns 会出现在窗口里、位置由访达定（摆位时它还不在，挪不了）
+  cp "$APP/Contents/Resources/AppIcon.icns" "$MOUNT/.VolumeIcon.icns"
+  xattr -wx com.apple.FinderInfo "$(printf '%016d0400%044d' 0 0)" "$MOUNT"
   # 挂载时系统写进来的事件日志目录：开了「显示隐藏文件」会露在窗口里，只读映像里也用不上
   rm -rf "$MOUNT/.fseventsd"
   sync

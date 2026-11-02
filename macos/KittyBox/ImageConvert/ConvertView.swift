@@ -84,6 +84,7 @@ struct ConvertView: View {
         HStack(spacing: 8) {
           FileThumb(url: item.source, size: 28)
           Text(item.source.lastPathComponent).lineLimit(1).truncationMode(.middle)
+            .help(item.source.lastPathComponent)
         }
       }
       .width(min: 120, ideal: 170)

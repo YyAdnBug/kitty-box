@@ -1,5 +1,5 @@
 // FileBatch：一批一起做——全做完、各自的结果和失败对得上，同时在做的不超过 4 张、也确实不止一张；
-// 一个一个做时停下：正在做的那个「已停止」，没开始的留着；只收 accepts 认的文件；跑的时候移除的不做、连按两下只开一批。
+// 一个一个做时停下：正在做的那个「已停止」，没开始的留着；只收 accepts 认的文件、重复的只收一个；跑的时候移除的不做、连按两下只开一批。
 
 import Foundation
 import Testing
@@ -39,11 +39,14 @@ struct FileBatchTests {
 
   @Test func stopsTheBatch() async throws {
     let batch = FileBatch(accepts: { $0.pathExtension == "mov" })
+    // 同一次里重复的、已经在列表里的都只收一个
     batch.add(
-      (1...3).map { URL(filePath: "/tmp/kittybox-batch/\($0).mov") } + [URL(filePath: "/tmp/a.txt")]
-    )
-    #expect(batch.items.count == 3)
+      (1...3).map { URL(filePath: "/tmp/kittybox-batch/\($0).mov") } + [
+        URL(filePath: "/tmp/a.txt"), URL(filePath: "/tmp/kittybox-batch/1.mov"),
+      ])
     #expect(batch.skipped == 1)
+    batch.add([URL(filePath: "/tmp/kittybox-batch/2.mov")])
+    #expect(batch.items.count == 3)
     // 一个要做一分钟的活：停下之前不可能做完（别的测试同时在主线程上跑重活，按时间等不靠谱）
     let work: @Sendable (URL, @escaping @Sendable (Double) -> Void) async throws -> URL = {
       source, progress in

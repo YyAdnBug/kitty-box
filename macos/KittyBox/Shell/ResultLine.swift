@@ -20,7 +20,7 @@ struct DoneLine: View {
   var body: some View {
     HStack(spacing: 8) {
       Label {
-        Text(text).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+        Text(text).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(text)
       } icon: {
         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
       }
@@ -39,7 +39,7 @@ struct FailLine: View {
 
   var body: some View {
     Label {
-      Text(reason).foregroundStyle(.secondary).lineLimit(2)
+      Text(reason).foregroundStyle(.secondary).lineLimit(2).help(reason)
     } icon: {
       if reason == Self.stopped {
         Image(systemName: "stop.circle").foregroundStyle(.secondary)

@@ -91,7 +91,8 @@ enum FileFacts {
   }
 }
 
-/// 一行前面的小图：图片是圆角缩略图，别的是访达图标
+/// 一行前面的小图：图片是圆角缩略图，别的是访达图标。缩略图整张等比放进方块（同访达，不裁）：原来铺满裁成方的，
+/// 海报、长截图只看得到中间一截（2026-11-02 用户报「有些图片展示不全」）
 struct FileThumb: View {
   let url: URL
   var size: CGFloat = 36
@@ -104,10 +105,10 @@ struct FileThumb: View {
       if let image {
         Image(decorative: image, scale: 1)
           .resizable()
-          .aspectRatio(contentMode: .fill)
-          .frame(width: size, height: size)
+          .scaledToFit()
           .clipShape(shape)
           .overlay { shape.hairlineBorder() }
+          .frame(width: size, height: size)
       } else {
         Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
           .resizable()

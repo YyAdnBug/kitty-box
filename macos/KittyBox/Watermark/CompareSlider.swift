@@ -74,12 +74,15 @@ struct CompareSlider: View {
         .background(.white, in: Circle())
         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
         .position(x: x, y: size.height / 2)
-      HStack {
-        tag("原图").opacity(split > 0.12 ? 1 : 0)
-        Spacer()
-        tag(afterLabel).opacity(split < 0.88 ? 1 : 0)
+      // 长条图画出来太窄、两个标签放不下时不画（原来字折成两行、两个叠在一起）
+      if size.width >= 160 {
+        HStack {
+          tag("原图").opacity(split > 0.12 ? 1 : 0)
+          Spacer()
+          tag(afterLabel).opacity(split < 0.88 ? 1 : 0)
+        }
+        .padding(8)
       }
-      .padding(8)
     }
     .frame(width: size.width, height: size.height)
     .clipShape(RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous))
@@ -132,6 +135,7 @@ struct CompareSlider: View {
   private func tag(_ text: String) -> some View {
     Text(text)
       .font(.system(size: 11, weight: .medium))
+      .fixedSize()
       .foregroundStyle(.white)
       .padding(.horizontal, 7)
       .padding(.vertical, 3)

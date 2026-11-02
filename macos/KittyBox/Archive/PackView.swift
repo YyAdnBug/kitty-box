@@ -139,6 +139,7 @@ struct PackView: View {
         HStack(spacing: 8) {
           FileThumb(url: row.url, size: 18)
           Text(row.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+            .help(row.url.lastPathComponent)
         }
       }
       .width(min: 160, ideal: 240)
@@ -147,11 +148,9 @@ struct PackView: View {
       TableColumn("大小") { FileSizeText(url: $0.url).foregroundStyle(.secondary) }
         .width(min: 60, ideal: 80)
       TableColumn("位置") { row in
-        Text(
-          (row.url.deletingLastPathComponent().path(percentEncoded: false) as NSString)
-            .abbreviatingWithTildeInPath
-        )
-        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+        let folder = (row.url.deletingLastPathComponent().path(percentEncoded: false) as NSString)
+          .abbreviatingWithTildeInPath
+        Text(folder).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(folder)
       }
     } rows: {
       ForEach(model.items.map(FileRow.init)) { TableRow($0) }
@@ -418,7 +417,7 @@ private struct PathList: View {
         LazyVStack(alignment: .leading, spacing: 4) {
           ForEach(rows, id: \.path) { row in
             HStack {
-              Text(row.path).lineLimit(1).truncationMode(.middle)
+              Text(row.path).lineLimit(1).truncationMode(.middle).help(row.path)
               Spacer()
               Text(row.note).foregroundStyle(.secondary)
             }

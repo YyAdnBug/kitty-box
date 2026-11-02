@@ -186,9 +186,11 @@ private struct BatchCard: View {
               .strokeBorder(Style.brand, lineWidth: 2)
           }
         }
+      // 格子窄，名字、原因常被截：指着看全文
       Text(item.source.lastPathComponent)
         .lineLimit(1).truncationMode(.middle)
         .font(.callout)
+        .help(item.source.lastPathComponent)
       line.font(.caption).lineLimit(2)
     }
     .contentShape(Rectangle())
@@ -222,11 +224,13 @@ private struct BatchCard: View {
       } else {
         Text("正在处理…").foregroundStyle(.secondary)
       }
-    case .done(let url): Text("存成「\(url.lastPathComponent)」").foregroundStyle(.secondary)
+    case .done(let url):
+      Text("存成「\(url.lastPathComponent)」").foregroundStyle(.secondary)
+        .help("存成「\(url.lastPathComponent)」")
     case .failed(let reason):
       VStack(alignment: .leading, spacing: 2) {
         // 右上角已经有红叹号：字用次要色（红字在白底上看不清）
-        Text(reason).foregroundStyle(.secondary)
+        Text(reason).foregroundStyle(.secondary).help(reason)
         if let handOff {
           Button("改用画笔擦除") { handOff(item.source) }.textLink()
         }

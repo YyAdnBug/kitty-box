@@ -244,6 +244,7 @@ struct UnpackView: View {
         HStack(spacing: 8) {
           FileThumb(url: job.archive, size: 18)
           Text(job.archive.lastPathComponent).lineLimit(1).truncationMode(.middle)
+            .help(job.archive.lastPathComponent)
         }
       }
       .width(min: 160, ideal: 240)
@@ -394,6 +395,7 @@ private struct ArchiveContents: View {
         VStack(alignment: .leading, spacing: 2) {
           Text(job.archive.lastPathComponent).font(.headline)
             .lineLimit(1).truncationMode(.middle)
+            .help(job.archive.lastPathComponent)
           Text(summary).font(.callout).foregroundStyle(.secondary)
         }
         Spacer()
@@ -405,7 +407,7 @@ private struct ArchiveContents: View {
           List(entries) { entry in
             HStack(spacing: 8) {
               Image(systemName: "doc").foregroundStyle(.secondary)
-              Text(entry.path).lineLimit(1).truncationMode(.middle)
+              Text(entry.path).lineLimit(1).truncationMode(.middle).help(entry.path)
               Spacer(minLength: 8)
               Text(entry.size.map { $0.formatted(.byteCount(style: .file)) } ?? "")
                 .monospacedDigit().foregroundStyle(.secondary)

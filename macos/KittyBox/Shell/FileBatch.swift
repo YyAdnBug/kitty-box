@@ -44,8 +44,9 @@ import SwiftUI
   func add(_ urls: [URL]) {
     let taken = urls.filter(accepts)
     skipped = urls.count - taken.count
-    let have = Set(items.map(\.source))
-    items += taken.filter { !have.contains($0) }.map { Item(source: $0) }
+    // 同一次拖进来的里面重复的也只收一个
+    var have = Set(items.map(\.source))
+    items += taken.filter { have.insert($0).inserted }.map { Item(source: $0) }
   }
 
   func remove(_ id: Item.ID) { items.removeAll { $0.id == id } }
@@ -201,6 +202,7 @@ struct BatchRow: View {
       FileThumb(url: item.source)
       VStack(alignment: .leading, spacing: 3) {
         Text(item.source.lastPathComponent).lineLimit(1).truncationMode(.middle)
+          .help(item.source.lastPathComponent)
         status.font(.system(size: 11))
       }
       Spacer(minLength: 4)

@@ -25,10 +25,11 @@ enum Prefs {
   static let autoCheckUpdates = "autoCheckUpdates"
   static let bounceWhenDone = "bounceWhenDone"
   static let appearance = "appearance"
-  /// 去背景：背景、裁不裁、用哪种抠法（Cutout.Engine）
+  /// 去背景：背景、裁不裁、用哪种抠法（Cutout.Engine）、保留文字
   static let cutoutBackground = "cutoutBackground"
   static let cutoutCrop = "cutoutCrop"
   static let cutoutEngine = "cutoutEngine"
+  static let cutoutKeepText = "cutoutKeepText"
   /// AI 水印：也去掉这些字（用户自己加的，逗号隔开）
   static let aiMarkWords = "aiMarkWords"
   /// 打包：压缩级别（Archiver.Level）

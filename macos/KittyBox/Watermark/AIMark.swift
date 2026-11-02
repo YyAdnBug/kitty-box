@@ -127,7 +127,8 @@ nonisolated enum AIMark {
     return found
   }
 
-  /// 系统文字识别（本机）认出来的每一行字和它的框（左上为原点的像素框，没扩过）；画笔擦除的「选文字」也用
+  /// 系统文字识别（本机）认出来的每一行字和它的框（左上为原点的像素框，没扩过）；画笔擦除的「选文字」、
+  /// 去背景的「保留文字」也用
   static func lines(in image: CGImage) throws -> [(text: String, rect: CGRect)] {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate

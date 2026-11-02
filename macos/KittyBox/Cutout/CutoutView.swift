@@ -1,5 +1,6 @@
-// 去背景页（M7；M9 加「精细」抠法和网格预览）：拖进（⌘V 粘贴、⌘O 添加）一批图 → 右边选项栏选怎么抠（精细 = 下载的模型、
-// 系统 = 主体识别）、背景（透明 / 白色）、要不要裁到主体 → 页头「去背景」，几张一起做（Cutout）。图是缩略图网格，
+// 去背景页（M7；M9 加「精细」抠法和网格预览；2026-11-02 加「保留文字」）：拖进（⌘V 粘贴、⌘O 添加）一批图 → 右边选项栏
+// 选怎么抠（精细 = 下载的模型、系统 = 主体识别）、背景（透明 / 白色）、要不要裁到主体、保不保留图上的字（默认开）
+// → 页头「去背景」，几张一起做（Cutout）。图是缩略图网格，
 // 点一张看大图（BatchPreview），做好了是前后对比（透明处垫棋盘格）。选了精细、模型还没下时顶上一条下载。
 // 做的时候右边的选项锁住，页头换成「停止」。
 // 结果是 PNG「原名-去背景.png」放在原图旁边，原图不动。
@@ -11,6 +12,7 @@ struct CutoutView: View {
   @AppStorage(Prefs.cutoutBackground) private var background = Cutout.Background.transparent
   @AppStorage(Prefs.cutoutCrop) private var crop = false
   @AppStorage(Prefs.cutoutEngine) private var engine = Cutout.Engine.model
+  @AppStorage(Prefs.cutoutKeepText) private var keepText = true
   @Bindable private var downloads = ModelDownloads.shared
 
   var body: some View {
@@ -26,9 +28,10 @@ struct CutoutView: View {
           .help("正在抠的几张抠完就停，没开始的留着")
       } else {
         Button("去背景") {
-          let (background, crop, engine) = (background, crop, engine)
+          let (background, crop, engine, keepText) = (background, crop, engine, keepText)
           batch.start {
-            try await Cutout.remove($0, background: background, crop: crop, engine: engine)
+            try await Cutout.remove(
+              $0, background: background, crop: crop, engine: engine, keepText: keepText)
           }
         }
         .buttonStyle(BrandButtonStyle())
@@ -66,6 +69,7 @@ struct CutoutView: View {
     .onChange(of: background) { batch.resetDone() }
     .onChange(of: crop) { batch.resetDone() }
     .onChange(of: engine) { batch.resetDone() }
+    .onChange(of: keepText) { batch.resetDone() }
   }
 
   @ViewBuilder private var optionGroups: some View {
@@ -86,6 +90,11 @@ struct CutoutView: View {
     OptionGroup(title: "大小", footnote: Text("打开后结果只留主体那一块，不保留原图的四边。")) {
       Toggle("裁到主体的边上", isOn: $crop)
     }
+    OptionGroup(
+      title: "文字", footnote: Text("海报、截图这类图上的字一笔一笔留下、周围透明；照片里背景上的招牌字也会被留下，不想要就关掉。")
+    ) {
+      Toggle("保留文字", isOn: $keepText)
+    }
   }
 
   /// 选了精细、模型还没下好
@@ -94,7 +103,7 @@ struct CutoutView: View {
   private var engineNote: String {
     switch engine {
     case .model: "下载的抠图模型（约 82 MB，下一次就行），什么都能抠，头发丝、绒毛的边干净；一张约 1 秒。在本机跑，不上传。"
-    case .system: "系统自带的主体识别，不用下载；人、动物、商品抠得好，风景、海报、纯文字的图认不出主体。"
+    case .system: "系统自带的主体识别，不用下载；人、动物、商品抠得好，风景、海报、纯文字的图认不出主体（开着「保留文字」时字照样留下）。"
     }
   }
 

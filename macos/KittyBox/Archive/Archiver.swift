@@ -44,14 +44,19 @@ enum Archiver {
   }
 
   nonisolated struct PackPlan: Sendable {
-    /// 选中的东西所在的文件夹；清单里的路径都相对它，包也放在这里
+    /// 包放在这里：第一样东西所在的文件夹
     var base: URL
     var items: [URL]
-    /// 要打进去的：文件、链接，和本来就空的文件夹
+    /// 要打进去的（文件、链接，和本来就空的文件夹），按所在的文件夹分组：路径相对那个文件夹，7zz 在那里跑一次，
+    /// 都加进同一个包（选中的东西可以来自不同的文件夹，同访达「压缩」，在包里都在最上层）
+    var groups: [(base: URL, files: [String])]
+    /// 各组的合在一起（数个数、列 Windows 不认的名字）
     var files: [String]
     /// 被规则排掉的（文件夹算一项，里面的不再往下看）
     var ignored: [(path: String, rule: String)]
     var windowsProblems: [(path: String, reason: String)]
+    /// 不同文件夹里同名的几样东西：包里只放得下一个（7zz 后加的会悄悄顶掉先加的，实测），不让打
+    var clashes: [String]
   }
 
   nonisolated enum Failure: LocalizedError, Equatable {
@@ -70,30 +75,51 @@ enum Archiver {
 
   // MARK: 打包
 
-  /// 列出要打进去的文件（B6）：在后台遍历，被规则命中的文件夹不再往下看
-  @concurrent nonisolated static func plan(_ items: [URL], rules: IgnoreRules) async -> PackPlan {
+  /// 列出要打进去的文件（B6）：在后台遍历，被规则命中的文件夹不再往下看；选中的东西或规则变了（任务被取消）就不往下列了
+  @concurrent nonisolated static func plan(_ picked: [URL], rules: IgnoreRules) async -> PackPlan {
+    // 同一样东西加了两次（带不带结尾的 /）、已经在另一个选中的文件夹里面的，不再单列
+    var unique: [URL] = []
+    for url in picked where !unique.contains(where: { $0.path == url.path }) { unique.append(url) }
+    let items = unique.filter { item in !unique.contains { item.path.hasPrefix($0.path + "/") } }
     let fileManager = FileManager.default
     var files: [String] = []
     var folders: [String] = []
     var ignored: [(path: String, rule: String)] = []
     var nonEmpty: Set<String> = []
+    /// 顶层名字 → 它所在的文件夹（分组用）
+    var parents: [String: URL] = [:]
+    var clashes: [String] = []
     for item in items {
       let top = item.lastPathComponent
+      // 不分大小写、统一合成形式：解到 Mac 上时这两个会撞名
+      let key = top.precomposedStringWithCanonicalMapping.lowercased()
+      if parents.updateValue(item.deletingLastPathComponent(), forKey: key) != nil {
+        clashes.append(top)
+      }
       let isFolder = isDirectory(try? fileManager.attributesOfItem(atPath: item.path))
       if let rule = rules.match(top, isDirectory: isFolder) {
         ignored.append((top, rule))
         continue
       }
-      guard isFolder, let walker = fileManager.enumerator(atPath: item.path) else {
+      guard isFolder,
+        let walker = fileManager.enumerator(
+          at: item, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+      else {
         files.append(top)
         continue
       }
       folders.append(top)
-      while let sub = walker.nextObject() as? String {
-        let path = top + "/" + sub
-        nonEmpty.insert(String(path[..<path.lastIndex(of: "/")!]))
-        let isFolder = isDirectory(walker.fileAttributes)
-        if let rule = rules.match(path, isDirectory: isFolder) {
+      // 按层记名字拼相对路径（不从 url.path 里截：/var 和 /private/var 对不上）
+      var names = [top]
+      while let url = walker.nextObject() as? URL, !Task.isCancelled {
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        let isFolder = values?.isDirectory == true && values?.isSymbolicLink != true
+        names.removeLast(names.count - walker.level)
+        nonEmpty.insert(names.joined(separator: "/"))
+        names.append(url.lastPathComponent)
+        let path = names.joined(separator: "/")
+        // 上面各层进来时已经比过（命中的整个跳过了），只比最后一层
+        if let rule = rules.match(url.lastPathComponent, isDirectory: isFolder) {
           ignored.append((path, rule))
           if isFolder { walker.skipDescendants() }
         } else if isFolder {
@@ -114,26 +140,44 @@ enum Archiver {
       }
     }
     files += folders.filter { !filled.contains($0) && !nonEmpty.contains($0) }
+    var groups: [(base: URL, files: [String])] = []
+    for file in files {
+      let top = file.prefix { $0 != "/" }.precomposedStringWithCanonicalMapping.lowercased()
+      let parent = parents[top] ?? items[0].deletingLastPathComponent()
+      if let index = groups.firstIndex(where: { $0.base.path == parent.path }) {
+        groups[index].files.append(file)
+      } else {
+        groups.append((parent, [file]))
+      }
+    }
     return PackPlan(
-      base: items[0].deletingLastPathComponent(), items: items, files: files, ignored: ignored,
-      windowsProblems: WindowsNames.problems(in: files))
+      base: items[0].deletingLastPathComponent(), items: items, groups: groups, files: files,
+      ignored: ignored, windowsProblems: WindowsNames.problems(in: files), clashes: clashes)
   }
 
-  /// 打好的包放在 plan.base 里，重名加「 2」。progress 报 0–1（7zz 的 -bsp1 百分比）；任务被取消时停掉 7zz、删掉打了一半的包，
+  /// 打好的包默认放在 plan.base 里，重名加「 2」；target 是「打包到…」选的位置（那里已有的包先挪到废纸篓，
+  /// 不然 7zz 会把新的并进旧包）。progress 报 0–1（7zz 的 -bsp1 百分比）；任务被取消时停掉 7zz、删掉打了一半的包，
   /// 抛 CancellationError
   static func pack(
-    _ plan: PackPlan, options: PackOptions, progress: @escaping (Double) -> Void = { _ in }
+    _ plan: PackPlan, options: PackOptions, to target: URL? = nil,
+    progress: @escaping (Double) -> Void = { _ in }
   ) async throws -> URL {
+    if let name = plan.clashes.first {
+      throw Failure.failed("「\(name)」有不止一个（在不同的文件夹里），包里只放得下一个，先移除一个。")
+    }
     if let problem = passwordProblem(options) { throw Failure.failed(problem) }
-    let archive = plan.base.appending(path: archiveName(for: plan.items, format: options.format))
-      .uniqued()
+    let archive =
+      target
+      ?? plan.base.appending(path: archiveName(for: plan.items, format: options.format)).uniqued()
+    if target != nil, FileManager.default.fileExists(atPath: archive.path) {
+      try FileManager.default.trashItem(at: archive, resultingItemURL: nil)
+    }
     let list = FileManager.default.temporaryDirectory.appending(path: "kittybox-\(UUID()).txt")
-    // ponytail: 名字里带换行的文件会把清单拆坏；真遇到再换成一个一个传
-    try plan.files.joined(separator: "\n").write(to: list, atomically: true, encoding: .utf8)
     defer { try? FileManager.default.removeItem(at: list) }
     var arguments = [
-      "a", "-t\(options.format == .zip ? "zip" : "7z")", "-snl", "-scsUTF-8", "-bso0", "-bsp1",
-      options.level.flag, archive.path, "@" + list.path,
+      // -spd：名字里的 * ? [ 不当通配符（不然「Why?.txt」会把旁边的「Why1.txt」也打进去，实测）
+      "a", "-t\(options.format == .zip ? "zip" : "7z")", "-snl", "-spd", "-scsUTF-8", "-bso0",
+      "-bsp1", options.level.flag, archive.path, "@" + list.path,
     ]
     if !options.password.isEmpty {
       arguments.append("-p" + options.password)
@@ -141,37 +185,58 @@ enum Archiver {
         options.format == .sevenZip
           ? "-mhe=on" : "-mem=" + (options.windowsCompatible ? "ZipCrypto" : "AES256"))
     }
-    let result = try await Subprocess.run(
-      sevenZip, arguments, captures: true, quality: .userInitiated, directory: plan.base,
-      watch: { if let percent = lastPercent(in: $0) { progress(percent) } })
-    guard result.status == 0, !Task.isCancelled else {
+    // 清单一行一个名字；带换行的（Icon␍ 的 \r 也算）会被拆开、两头的空格会被去掉、两头都是引号的会被去掉引号
+    // （「"q"」变成旁边的「q」，实测），这些放在 -- 后面的命令行上。
+    // ponytail: 这种名字成千上万时会超过命令行长度上限（约 1 MB），真遇到再分批
+    let fits = { (name: String) in
+      !name.contains(where: \.isNewline) && name.first?.isWhitespace == false
+        && name.last?.isWhitespace == false && !(name.hasPrefix("\"") && name.hasSuffix("\""))
+    }
+    do {
+      for (index, group) in plan.groups.enumerated() {
+        try group.files.filter(fits).joined(separator: "\n")
+          .write(to: list, atomically: true, encoding: .utf8)
+        let result = try await Subprocess.run(
+          sevenZip, arguments + ["--"] + group.files.filter { !fits($0) }, captures: true,
+          quality: .userInitiated, directory: group.base,
+          watch: { text in
+            if let percent = lastPercent(in: text) {
+              progress((Double(index) + percent) / Double(plan.groups.count))
+            }
+          })
+        try Task.checkCancellation()
+        guard result.status == 0 else { throw Failure.failed("打包没成功：" + summary(of: result)) }
+      }
+    } catch {
+      // 前几组已经加进去了也删掉：打了一半的包不留在正式的名字下
       try? FileManager.default.removeItem(at: archive)
-      try Task.checkCancellation()
-      throw Failure.failed("打包没成功：" + summary(of: result))
+      throw error
     }
     return archive
   }
 
   // MARK: 解压
 
-  /// 解到压缩包旁边：包里只有一样东西时直接放出来，不然放进和包同名的文件夹（B8）。重名加「 2」。
+  /// 解到压缩包旁边（folder 是「解到…」选的文件夹）：包里只有一样东西时直接放出来，不然放进和包同名的文件夹（B8）。重名加「 2」。
   /// progress 报 0–1：7zz 的 -bsp1 百分比；zip 按 tar -v 解出来的条数 / 中央目录里的条数；别的 tar 一族不知道总数、不报。
   /// 任务被取消时停掉子进程、删掉解了一半的文件夹，抛 CancellationError
   static func unpack(
-    _ archive: URL, password: String = "", progress: @escaping (Double) -> Void = { _ in }
+    _ archive: URL, into folder: URL? = nil, password: String = "",
+    progress: @escaping (Double) -> Void = { _ in }
   ) async throws -> URL {
-    let parent = archive.deletingLastPathComponent()
+    let parent = folder ?? archive.deletingLastPathComponent()
     let name = folderName(for: archive)
     let work = parent.appending(path: ".\(name) 解压中").uniqued()
     try FileManager.default.createDirectory(at: work, withIntermediateDirectories: false)
     do {
-      // 没给密码也要传一个：不传的话 tar 会对着空的标准输入连问上万次，7zz 会卡在问密码；不加密的包会忽略它
+      // 没给密码也要传一个：不传的话 tar 会对着空的标准输入连问上万次，7zz 会卡在问密码；不加密的包会忽略它。
+      // 不走标准输入：tar 从那里读到错的密码会再问上万次、十几秒才放弃，还不报「Incorrect passphrase」（2026-11 实测）
       let given = password.isEmpty ? "kitty-box-no-password" : password
       let result: Subprocess.Result
       let wrongPassword: Bool
       if usesTar(archive) {
         var arguments = ["-xvf", archive.path, "-C", work.path, "--passphrase", given]
-        let entries = ZipNames.isZip(archive) ? ZipNames.entries(of: archive) : nil
+        let entries = await zipEntries(archive)
         if let entries {
           arguments += ["--options", "hdrcharset=" + ZipNames.charset(for: entries).rawValue]
         }
@@ -190,9 +255,11 @@ enum Archiver {
           result.error.contains("Incorrect passphrase")
           || entries?.contains(where: \.encrypted) == true
       } else {
+        // -spd：包的名字里的 ? * 不当通配符（不然解「Why?.7z」会把旁边的「Why1.7z」也解出来，实测）。
+        // 在临时文件夹里跑、不用 -o：-o 里的 * 会被换成包名（「a*b.7z」解到了旁边的「.aa*bb 解压中」，实测）
         result = try await Subprocess.run(
-          sevenZip, ["x", "-y", "-bso0", "-bsp1", "-o" + work.path, "-p" + given, archive.path],
-          captures: true, quality: .userInitiated,
+          sevenZip, ["x", "-y", "-spd", "-bso0", "-bsp1", "-p" + given, "--", archive.path],
+          captures: true, quality: .userInitiated, directory: work,
           watch: { if let percent = lastPercent(in: $0) { progress(percent) } })
         wrongPassword = (result.output + result.error).contains("Wrong password")
       }
@@ -203,9 +270,20 @@ enum Archiver {
       }
       return try await settle(work, from: archive, name: name)
     } catch {
-      try? FileManager.default.removeItem(at: work)
+      // 几万个文件要删一两秒，放到后台，不卡窗口
+      await discard(work)
       throw error
     }
+  }
+
+  @concurrent nonisolated private static func discard(_ url: URL) async {
+    try? FileManager.default.removeItem(at: url)
+  }
+
+  /// zip 的中央目录（十万条要读、判断一阵子，放到后台）；不是 zip 或读不出时是 nil
+  @concurrent nonisolated private static func zipEntries(_ archive: URL) async -> [ZipNames.Entry]?
+  {
+    ZipNames.isZip(archive) ? ZipNames.entries(of: archive) : nil
   }
 
   /// 包里的一个文件（「看看里面」，M6）；大小不知道（tar 一族、ZIP64 的大条目）时是 nil
@@ -218,28 +296,50 @@ enum Archiver {
   /// 包里有什么：只列文件（文件夹不算一项），去掉解压时会跳过的杂文件（B7）。zip 读中央目录（GBK 名字也读对），
   /// tar 一族用 tar -tf（没有大小），别的用 7zz l -slt；连文件名都加了密的 7z 没给对密码时抛 needsPassword / wrongPassword
   static func contents(of archive: URL, password: String = "") async throws -> [Entry] {
-    let entries: [Entry]
     if ZipNames.isZip(archive) {
-      guard let raw = ZipNames.entries(of: archive) else { throw Failure.failed("读不出这个 zip。") }
-      let charset = ZipNames.charset(for: raw)
-      entries = raw.map {
-        Entry(path: ZipNames.name(of: $0, charset: charset), size: $0.size.map(Int64.init))
-      }
-    } else if usesTar(archive) {
-      let result = try await Subprocess.run(tar, ["-tf", archive.path], captures: true)
-      guard result.status == 0 else { throw Failure.failed("读不出这个包：" + summary(of: result)) }
-      entries = result.output.split(separator: "\n").map { Entry(path: String($0), size: nil) }
+      guard let entries = await zipContents(archive) else { throw Failure.failed("读不出这个 zip。") }
+      return entries
+    }
+    let tarFamily = usesTar(archive)
+    let result: Subprocess.Result
+    if tarFamily {
+      // 从访达打开的 App 没有 UTF-8 的 locale，tar 列出来的中文名会变成「\344\273\243」这样的转义（2026-11 实测）
+      result = try await Subprocess.run(
+        tar, ["-tf", archive.path], captures: true, environment: ["LC_ALL": "en_US.UTF-8"])
     } else {
       let given = password.isEmpty ? "kitty-box-no-password" : password
-      let result = try await Subprocess.run(
-        sevenZip, ["l", "-ba", "-slt", "-sccUTF-8", "-p" + given, archive.path], captures: true)
+      result = try await Subprocess.run(
+        sevenZip, ["l", "-ba", "-slt", "-spd", "-sccUTF-8", "-p" + given, "--", archive.path],
+        captures: true)
       if (result.output + result.error).contains("Wrong password") {
         throw password.isEmpty ? Failure.needsPassword : Failure.wrongPassword
       }
-      guard result.status == 0 else { throw Failure.failed("读不出这个包：" + summary(of: result)) }
-      entries = listed(result.output)
     }
-    return entries.filter {
+    guard result.status == 0 else { throw Failure.failed("读不出这个包：" + summary(of: result)) }
+    return await parsed(result.output, tarFamily: tarFamily)
+  }
+
+  /// 十万条的包要拆、筛一两秒，放到后台（同 plan、settle）
+  @concurrent nonisolated private static func zipContents(_ archive: URL) async -> [Entry]? {
+    guard let raw = ZipNames.entries(of: archive) else { return nil }
+    let charset = ZipNames.charset(for: raw)
+    return withoutJunk(
+      raw.map {
+        Entry(path: ZipNames.name(of: $0, charset: charset), size: $0.size.map(Int64.init))
+      })
+  }
+
+  @concurrent nonisolated private static func parsed(_ output: String, tarFamily: Bool) async
+    -> [Entry]
+  {
+    withoutJunk(
+      tarFamily
+        ? output.split(separator: "\n").map { Entry(path: String($0), size: nil) }
+        : listed(output))
+  }
+
+  nonisolated private static func withoutJunk(_ entries: [Entry]) -> [Entry] {
+    entries.filter {
       !$0.path.hasSuffix("/") && IgnoreRules.unpackJunk.match($0.path, isDirectory: false) == nil
     }
   }
@@ -288,7 +388,11 @@ enum Archiver {
 
     let parent = work.deletingLastPathComponent()
     let children = try fileManager.contentsOfDirectory(atPath: work.path)
-    if children.count == 1 {
+    // 只有一个隐藏的（.git、.zshrc）或链接时照样放进文件夹：放出来访达里看不见，还会悄悄落在包旁边起作用
+    if children.count == 1, !children[0].hasPrefix("."),
+      (try? fileManager.destinationOfSymbolicLink(atPath: work.appending(path: children[0]).path))
+        == nil
+    {
       let target = parent.appending(path: children[0]).uniqued()
       try fileManager.moveItem(at: work.appending(path: children[0]), to: target)
       try fileManager.removeItem(at: work)
@@ -314,12 +418,32 @@ enum Archiver {
     return archiveExtensions.contains(ext) || (ext.count == 3 && ext.allSatisfy(\.isNumber))
   }
 
-  /// 分卷包（.001、.part1.rar）：解完不挪到废纸篓（别的卷还在，只挪一个反而乱）
+  /// 分卷包（.001、.part1.rar，旁边有 .z01 的 zip、有 .r00 的 rar）：解完不挪到废纸篓（别的卷还在，只挪一个反而乱）
   nonisolated static func isMultiVolume(_ url: URL) -> Bool {
     let name = url.lastPathComponent.lowercased()
     let ext = url.pathExtension
+    let stem = url.deletingPathExtension().path
     return (ext.count == 3 && ext.allSatisfy(\.isNumber))
       || name.range(of: #"\.part\d+\.rar$"#, options: .regularExpression) != nil
+      || ["z01", "r00"].contains { FileManager.default.fileExists(atPath: stem + "." + $0) }
+  }
+
+  /// 分卷包的第 2 卷起（.002、.part2.rar）换成第一卷：7zz 从第一卷读整套，单独解后面的只会失败。
+  /// 一整套拖进来就只解一次；第一卷不在旁边时原样留着（解的时候说清楚）
+  nonisolated static func firstVolume(of url: URL) -> URL {
+    let name = url.lastPathComponent
+    let first: String
+    if let match = name.firstMatch(of: /^(.+\.)(\d{3})$/), Int(match.2) ?? 0 > 1 {
+      first = match.1 + "001"
+    } else if let match = name.firstMatch(of: /^(.+\.part)(\d+)(\.rar)$/.ignoresCase()),
+      Int(match.2) ?? 0 > 1
+    {
+      first = match.1 + String(repeating: "0", count: match.2.count - 1) + "1" + match.3
+    } else {
+      return url
+    }
+    let candidate = url.deletingLastPathComponent().appending(path: first)
+    return FileManager.default.fileExists(atPath: candidate.path) ? candidate : url
   }
 
   /// zip（看文件头）和 tar 一族交给系统 tar：7zz 解 .tar.gz 只解出一层 .tar，解 GBK 名字的 zip 会坏
@@ -376,10 +500,41 @@ enum Archiver {
     text.matches(of: /(\d{1,3})%/).last.flatMap { Double($0.output.1) }.map { min($0 / 100, 1) }
   }
 
-  /// 给人看的出错原因：工具最后一行有内容的输出
+  /// 给人看的出错原因：认得的说成中文；不然是标准错误里最后一行有用的。只看标准错误：7zz 的进度在标准输出、满是退格，
+  /// tar 最后那句「Error exit delayed」不说原因，tar -v 解出一条写一行「x 名字」（出错的那条后面才跟「: 原因」，
+  /// 坏的是第一条时最后一行是后面好好的那条，实测）
   private static func summary(of result: Subprocess.Result) -> String {
-    let lines = (result.error + "\n" + result.output).split(whereSeparator: \.isNewline)
-    let last = lines.last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-    return last.map { String($0.prefix(200)) } ?? "退出码 \(result.status)"
+    let lines = result.error.split(whereSeparator: \.isNewline).map {
+      String(String.UnicodeScalarView($0.unicodeScalars.filter { $0.value >= 0x20 }))
+        .trimmingCharacters(in: .whitespaces)
+    }
+    .filter {
+      !$0.isEmpty && !$0.contains("Error exit delayed")
+        && !($0.hasPrefix("x ") && !$0.contains(": "))
+    }
+    let known = [
+      ("CRC Failed", "压缩包坏了（校验对不上），可能没下载完整。"),
+      ("bad CRC", "压缩包坏了（校验对不上），可能没下载完整。"),
+      ("Data Error", "压缩包坏了，可能没下载完整。"),
+      ("decompression failed", "压缩包坏了，可能没下载完整。"),
+      ("Damaged", "压缩包坏了，可能没下载完整。"),
+      ("Truncated", "压缩包不完整，可能没下载完。"),
+      ("Unexpected end", "压缩包不完整，可能没下载完。"),
+      ("Cannot open the file as", "不是压缩包，或者是分卷包的后几卷（要从第一卷解）。"),
+      ("Unrecognized archive format", "不是压缩包，或者是不支持的格式。"),
+      ("Path contains '..'", "包里有指向外面的路径（../），为了安全不解。"),
+      ("No space left", "磁盘空间不够了。"),
+      ("Read-only file system", "这个位置是只读的。"),
+      ("Operation not permitted", "没有权限读写这个位置（系统设置 › 隐私与安全性 › 文件与文件夹）。"),
+      ("Permission denied", "没有权限读写这个位置。"),
+      ("errno=2 ", "有文件找不到了（移走或删掉了？）。"),
+    ]
+    // 不分大小写：tar 写的是「truncated gzip input」
+    if let hit = known.first(where: { key, _ in
+      lines.contains { $0.localizedCaseInsensitiveContains(key) }
+    }) {
+      return hit.1
+    }
+    return lines.last.map { String($0.prefix(200)) } ?? "退出码 \(result.status)"
   }
 }

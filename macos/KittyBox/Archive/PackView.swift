@@ -1,5 +1,5 @@
-// 打包页（B2–B6、B10、B11）：拖进（或 ⌘V 粘贴、⌘O 添加）要打包的东西 → 右边选项栏里选 zip / 7z、设不设密码、看忽略清单
-// （勾、加、删，改了就记住）→ 页头「打包」，包放在原文件旁边。
+// 打包页（B2–B6、B10、B11）：拖进（或 ⌘V 粘贴、⌘O 添加）要打包的东西（可以来自不同的文件夹）→ 右边选项栏里选 zip / 7z、
+// 设不设密码、看忽略清单（勾、加、删，改了就记住）→ 页头「打包」，包放在第一样东西旁边；「打包到…」自己选位置和名字。
 // 中间是表格（名称、种类、大小，右键在访达中显示 / 移除，⌫ 移除）；底下状态栏写「N 项 · 打包 N 个文件 · 忽略 M 项」，
 // 点「查看」看忽略了哪些、哪些文件名 Windows 不认。空着时整页是拖放区。
 
@@ -20,8 +20,10 @@ import UniformTypeIdentifiers
   private var task: Task<Void, Never>?
   let ignore = IgnoreList()
 
+  /// 上一包打好了，再加进来的是新的一包（同访达「压缩」：一次一个包）；同一样东西（带不带结尾的 /）不加两次
   func add(_ urls: [URL]) {
-    items += urls.filter { !items.contains($0) }
+    if case .success = result { items = [] }
+    for url in urls where !items.contains(where: { $0.path == url.path }) { items.append(url) }
     result = nil
   }
 
@@ -36,14 +38,16 @@ import UniformTypeIdentifiers
       + ignore.custom
   }
 
-  func pack(_ options: Archiver.PackOptions) {
+  /// target：「打包到…」选的位置；nil 放在第一样东西旁边
+  func pack(_ options: Archiver.PackOptions, to target: URL? = nil) {
     guard let plan, !running else { return }
     running = true
     progress = nil
     result = nil
     task = Task {
       do {
-        result = .success(try await Archiver.pack(plan, options: options) { self.progress = $0 })
+        result = .success(
+          try await Archiver.pack(plan, options: options, to: target) { self.progress = $0 })
         NSApp.bounceIfInBackground()
       } catch is CancellationError {
         result = nil
@@ -70,10 +74,19 @@ struct PackView: View {
   @State private var ruleProblem: String?
   @State private var showsIgnored = false
   @State private var showsProblems = false
+  @State private var showsPassword = false
+  /// 在「加一条」里打字：回车是加规则，不是打包
+  @FocusState private var typingRule: Bool
 
   private var options: Archiver.PackOptions {
     .init(
       format: format, password: model.password, windowsCompatible: windowsCompatible, level: level)
+  }
+
+  private var canPack: Bool {
+    guard let plan = model.plan else { return false }
+    return !plan.files.isEmpty && plan.clashes.isEmpty && !model.running
+      && Archiver.passwordProblem(options) == nil
   }
 
   var body: some View {
@@ -83,12 +96,13 @@ struct PackView: View {
       Button("移除", systemImage: "minus") { model.remove(selection) }
         .help("移除选中的（⌫）")
         .disabled(selection.isEmpty || model.running)
+      Button("打包到…", systemImage: "square.and.arrow.down") { packTo() }
+        .help("自己选包放在哪、叫什么")
+        .disabled(!canPack)
       Button("打包") { model.pack(options) }
         .buttonStyle(BrandButtonStyle())
-        .keyboardShortcut(.defaultAction)
-        .disabled(
-          model.plan?.files.isEmpty != false || model.running
-            || Archiver.passwordProblem(options) != nil)
+        .keyboardShortcut(typingRule ? nil : .defaultAction)
+        .disabled(!canPack)
     } content: {
       if model.items.isEmpty {
         DropZone(tool: .pack, title: "拖入要打包的文件或文件夹", detail: "可以一次放好几个，打好的包放在它们旁边")
@@ -163,6 +177,13 @@ struct PackView: View {
   @ViewBuilder private var summary: some View {
     if model.items.isEmpty {
       Text("还没选要打包的东西")
+    } else if let plan = model.plan, !plan.clashes.isEmpty {
+      // 不同文件夹里的同名东西：包里只放得下一个，不让打（不同于下面 Windows 不认的名字，那个照样能打）
+      Label(
+        "「\(plan.clashes.formatted(.list(type: .and)))」有同名的（在不同的文件夹里），包里只放得下一个，先移除一个",
+        systemImage: "exclamationmark.triangle.fill"
+      )
+      .foregroundStyle(.red)
     } else if let plan = model.plan {
       HStack(spacing: 6) {
         Text(
@@ -222,9 +243,24 @@ struct PackView: View {
       footnote: Archiver.passwordProblem(options).map { Text($0).foregroundStyle(.red) }
         ?? Text(passwordHint)
     ) {
-      SecureField("密码", text: $model.password, prompt: Text("不设密码"))
+      // 只输一遍、又看不见的话，打错一个字包就没人打得开了：能点开看一眼
+      HStack(spacing: 6) {
+        Group {
+          if showsPassword {
+            TextField("密码", text: $model.password, prompt: Text("不设密码"))
+          } else {
+            SecureField("密码", text: $model.password, prompt: Text("不设密码"))
+          }
+        }
         .textFieldStyle(.roundedBorder)
         .labelsHidden()
+        Button(
+          showsPassword ? "隐藏密码" : "显示密码", systemImage: showsPassword ? "eye.slash" : "eye"
+        ) { showsPassword.toggle() }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .help(showsPassword ? "隐藏密码" : "显示密码")
+      }
       if format == .zip, !model.password.isEmpty {
         Toggle("让 Windows 自带解压也能打开", isOn: $windowsCompatible)
       }
@@ -249,6 +285,7 @@ struct PackView: View {
         TextField("加一条", text: $newRule, prompt: Text("*.log、草稿、build/"))
           .textFieldStyle(.roundedBorder)
           .labelsHidden()
+          .focused($typingRule)
           .onSubmit(addRule)
         Button("添加", action: addRule).disabled(newRule.isEmpty)
       }
@@ -313,6 +350,19 @@ struct PackView: View {
     ruleProblem = model.ignore.add(newRule)
     if ruleProblem == nil { newRule = "" }
   }
+
+  /// 「打包到…」：默认名字和位置同「打包」，换了的话放在选的地方；选了替换已有的包时旧的挪到废纸篓（能放回去）
+  private func packTo() {
+    guard let plan = model.plan else { return }
+    let panel = NSSavePanel()
+    panel.nameFieldStringValue = Archiver.archiveName(for: plan.items, format: format)
+    panel.directoryURL = plan.base
+    panel.allowedContentTypes = [UTType(filenameExtension: format.rawValue) ?? .data]
+    panel.canCreateDirectories = true
+    panel.prompt = "打包"
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    model.pack(options, to: url)
+  }
 }
 
 /// 表格的一行（URL 本身不是 Identifiable）
@@ -341,7 +391,8 @@ private struct PathList: View {
     VStack(alignment: .leading, spacing: 8) {
       Text(title).font(.caption).foregroundStyle(.secondary)
       ScrollView {
-        VStack(alignment: .leading, spacing: 4) {
+        // 几千个 .DS_Store 时一下子全建出来会卡一下：按需建
+        LazyVStack(alignment: .leading, spacing: 4) {
           ForEach(rows, id: \.path) { row in
             HStack {
               Text(row.path).lineLimit(1).truncationMode(.middle)

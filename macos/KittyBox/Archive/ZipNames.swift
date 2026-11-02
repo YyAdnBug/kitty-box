@@ -89,7 +89,8 @@ nonisolated enum ZipNames {
       cdOffset = record.u64(48)
     }
     if count == 0 { return [] }
-    guard cdOffset + cdSize <= size, (try? handle.seek(toOffset: cdOffset)) != nil,
+    // 不把两个数加起来比：ZIP64 里是文件自己写的 64 位数，坏包、恶意包加起来会溢出、整个 App 崩掉
+    guard cdSize <= size, cdOffset <= size - cdSize, (try? handle.seek(toOffset: cdOffset)) != nil,
       let directory = try? handle.read(upToCount: Int(cdSize)).map([UInt8].init)
     else { return nil }
     return parse(directory, count: count)

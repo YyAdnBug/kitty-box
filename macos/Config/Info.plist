@@ -22,6 +22,8 @@
 			<array>
 				<string>public.archive</string>
 				<string>public.zip-archive</string>
+				<string>org.7-zip.7-zip-archive</string>
+				<string>com.rarlab.rar-archive</string>
 				<string>public.tar-archive</string>
 				<string>org.gnu.gnu-zip-archive</string>
 				<string>public.bzip2-archive</string>
@@ -38,6 +40,56 @@
 			<array>
 				<string>public.item</string>
 			</array>
+		</dict>
+	</array>
+	<!-- 系统没声明 RAR（只有装了别的解压软件的 Mac 上才有），.rar 就是一个谁都不认的动态类型：「打开方式」「服务」都不列本 App。
+	     这里补上声明（7z 系统有声明时以系统为准，这里只是兜底） -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.rarlab.rar-archive</string>
+			<key>UTTypeDescription</key>
+			<string>RAR 压缩包</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rar</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.rar</string>
+					<string>application/x-rar-compressed</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.7-zip.7-zip-archive</string>
+			<key>UTTypeDescription</key>
+			<string>7z 压缩包</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>7z</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-7z-compressed</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 	<!-- App 自己的网址（M9）：scheme 就是 bundle id（Debug、Release 各认各的）。访达扩展（KittyBoxFinder）点了「用 Kitty Box …」

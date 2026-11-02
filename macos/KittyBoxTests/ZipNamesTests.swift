@@ -68,6 +68,26 @@ struct ZipNamesTests {
     #expect(ZipNames.charset(of: url) == nil)
   }
 
+  /// 坏的 / 恶意的 ZIP64：中央目录的位置是 UInt64.max，加上大小会溢出，以前整个 App 崩掉；现在读不出、按 nil 处理
+  @Test func zip64OverflowIsRejected() throws {
+    func le(_ value: UInt64, _ count: Int) -> [UInt8] {
+      (0..<count).map { UInt8(truncatingIfNeeded: value >> (8 * UInt64($0))) }
+    }
+    let head: [UInt8] = [0x50, 0x4B, 0x03, 0x04] + [UInt8](repeating: 0, count: 60)
+    let record =
+      le(0x0606_4B50, 4) + le(44, 8) + le(45, 2) + le(45, 2) + le(0, 4) + le(0, 4) + le(1, 8)
+      + le(1, 8) + le(0x10, 8) + le(.max, 8)
+    let locator = le(0x0706_4B50, 4) + le(0, 4) + le(UInt64(head.count), 8) + le(1, 4)
+    let end =
+      le(0x0605_4B50, 4) + le(0, 4) + le(0xFFFF, 2) + le(0xFFFF, 2) + le(0xFFFF_FFFF, 4)
+      + le(0xFFFF_FFFF, 4) + le(0, 2)
+    let url = FileManager.default.temporaryDirectory.appending(path: "kittybox-\(UUID()).zip")
+    try Data(head + record + locator + end).write(to: url)
+    defer { try? FileManager.default.removeItem(at: url) }
+    #expect(ZipNames.isZip(url))
+    #expect(ZipNames.entries(of: url) == nil)
+  }
+
   /// 结尾记录后面跟着注释时，也要从后往前找到它
   @Test func archiveComment() throws {
     var data = zipData([(gbkName, false)])

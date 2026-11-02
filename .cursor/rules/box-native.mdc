@@ -16,7 +16,7 @@ alwaysApply: true
 - Windows 版以后在 `windows` 分支另写；mac 这边的行为改了，PLAN 跟着改（Windows 照它做）。
 
 ## 2. 技术栈白名单
-- 只用 Apple 框架（SwiftUI、AppKit、ImageIO、Core Image、Core ML、AVFoundation、UniformTypeIdentifiers、QuickLook、Vision、AVKit、FinderSync）和系统命令 `/usr/bin/tar`。QuickLook 是 2026-10-30 M6 加的（表格里按空格快速查看，同 Kitty Tools）；Vision 是 M7 加的（去背景的主体识别、AI 水印找文字，都在本机）；AVKit 是 M8 加的（视频转换的预览播放器和它自带的剪辑条）；FinderSync 是 M9 加的（访达右键菜单第一层和「新建文件」，用户点名要，M5 时没做）。
+- 只用 Apple 框架（SwiftUI、AppKit、ImageIO、Core Image、Core ML、AVFoundation、UniformTypeIdentifiers、QuickLook、Vision、AVKit、FinderSync、os）和系统命令 `/usr/bin/tar`。QuickLook 是 2026-10-30 M6 加的（表格里按空格快速查看，同 Kitty Tools）；Vision 是 M7 加的（去背景的主体识别、AI 水印找文字，都在本机）；AVKit 是 M8 加的（视频转换的预览播放器和它自带的剪辑条）；FinderSync 是 M9 加的（访达右键菜单第一层和「新建文件」，用户点名要，M5 时没做）；os（只用 Logger）是 2026-11-02 质量打磨时加的（更新、子进程、访达扩展失败时留个原因，不记参数：7zz 的 -p 带着密码）。
 - **第三方只有 `7zz` 一个例外**（2026-10-30 拍板）：`fetch-vendor.sh` 按 SHA256 拉到 `macos/Vendor/`，不入库；构建时 Xcode 的「Embed 7zz」拷进包里并用本团队证书签名。**禁止任何 SPM 包、第三方库、XcodeGen / Tuist / SwiftLint / create-dmg 这类工具**。数据文件附各自的 LICENSE：Gemini α 图随包；LaMa 模型不随包（2026-10-30 用户要求，安装包从约 200 MB 降到几 MB），画笔擦除第一次用时下载到 Application Support，固定 revision 和 SHA256，对不上不装；去背景「精细」的 BiRefNet 抠图模型（MIT，M9）同样用时下载。新建文件的 Office 模板是自己做的，随访达扩展进包。
 - 部署目标 macOS 15.0；`ARCHS = arm64`。构建设置只写在 `macos/Config/*.xcconfig`，pbxproj 的 target 层 buildSettings 保持为空。
 - 用到 macOS 26 API 时就地写 `if #available(macOS 26, *)`，不另建封装。

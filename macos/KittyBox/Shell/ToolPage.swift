@@ -139,7 +139,8 @@ struct OptionGroup<Content: View>: View {
   }
 }
 
-/// 空着时铺满页面的拖放区：家族色的圆底符号 + 标题 + 一句说明 +「添加文件…」和 ⌘V 提示
+/// 空着时铺满页面的拖放区：56 pt 家族色块（同页头、侧边栏的那个；深靛、浅棕当前景色对比不够，所以不画家族色的符号）
+/// + 标题 + 一句说明 +「添加文件…」和 ⌘V 提示
 struct DropZone: View {
   let tool: Tool
   let title: String
@@ -147,12 +148,7 @@ struct DropZone: View {
 
   var body: some View {
     VStack(spacing: 16) {
-      Image(systemName: tool.symbol)
-        .font(.system(size: 30, weight: .medium))
-        .foregroundStyle(tool.color)
-        .frame(width: 76, height: 76)
-        .background(tool.color.opacity(0.12), in: Circle())
-        .accessibilityHidden(true)
+      KindTile(symbol: tool.symbol, color: tool.color, size: 56)
       VStack(spacing: 6) {
         Text(title).font(.system(size: 15, weight: .semibold))
         Text(detail)

@@ -1,6 +1,7 @@
 // Whisker 设计刻度：从 Kitty Tools 的 Shell/Style.swift 摘出 Kitty Box 用得上的部分，刻度值保持一致（mac-whisker.mdc §2–4、§7）：
-// 圆角、命名弹簧曲线、动态色、悬停色、选中色、发丝线（Hairline）、卡片表面、种类色块、品牌粉主按钮（BrandButtonStyle），
-// 加四类工具的家族色。强调色跟随系统：系统是「多色」时就是 AccentColor.colorset 的品牌粉（不拷 Kitty Tools 的 Accent.swift）。
+// 圆角、命名弹簧曲线、动态色、悬停色、选中色、发丝线（Hairline）、卡片表面、种类色块（KindTile，比 Kitty Tools 的精修过）、
+// 品牌粉主按钮（BrandButtonStyle），加八个工具的家族色。强调色跟随系统：系统是「多色」时就是 AccentColor.colorset 的品牌粉
+// （不拷 Kitty Tools 的 Accent.swift）。
 // 界面里的圆角、曲线、颜色一律从这里取，不硬编码；Kitty Tools 那边有、这里还没用到的（输入框、空状态、危险色…）用到时再照搬。
 
 import AppKit
@@ -118,16 +119,33 @@ enum Style {
     return reduceTransparency
   }
 
-  /// 四类工具的家族色：侧边栏和页头的色块、拖放区、拖着经过时的描边共用（去水印的三项同一个色）
+  /// 八个工具的家族色：侧边栏、页头、拖放区的色块和拖着经过时的描边共用。按侧边栏的组上色，组里一个工具一个邻近色：
+  /// 压缩是纸箱的棕（同 App 图标），转换是蓝，修图是靛蓝一族；都离品牌粉够远，白符号在色块上都看得清（2026-11-02 拍板的 ①）。
+  /// 都由系统色调出来（Color.mix 要 15），深浅色跟着系统色变
   enum Family {
-    static let pack = Color(nsColor: .systemOrange)
-    static let unpack = Color(nsColor: .systemGreen)
-    static let convert = Color(nsColor: .systemBlue)
-    static let watermark = Color(nsColor: .systemPurple)
+    private static let brown = Color(nsColor: .systemBrown)
+    private static let blue = Color(nsColor: .systemBlue)
+    private static let indigo = Color(nsColor: .systemIndigo)
+
+    static let pack = brown
+    /// 拆开的纸箱：暖一档
+    static let unpack = brown.mix(with: Color(nsColor: .systemOrange), by: 0.45)
+    /// 天蓝：和视频转换的正蓝一组、浅一档
+    static let convert = blue.mix(with: Color(nsColor: .systemCyan), by: 0.35)
+    static let videoConvert = blue
+    static let cutout = indigo
+    /// 紫罗兰（魔法）：比纯紫离品牌粉远
+    static let aiMark = indigo.mix(with: Color(nsColor: .systemPurple), by: 0.4)
+    /// 长春花蓝：和上下两行的色相、明度都拉开
+    static let erase = indigo.mix(with: blue, by: 0.4)
+    /// 深靛：当色块底、拖放描边都行，别当字和符号的颜色（在深色底上发虚）
+    static let video = indigo.mix(with: .black, by: 0.22)
   }
 }
 
-/// 种类色块：视觉重量和 App 图标一致（Kitty Tools 同名视图，只留系统符号）
+/// 种类色块：视觉重量和 App 图标一致（侧边栏 16–24、页头 40、拖放区 56 共用）。Kitty Tools 同名视图精修过，两边不再一样：
+/// 不透明（选中时粉色不透进来）、上下只差 14% 近乎平涂、上亮下淡的一圈亮边、符号 0.54 倍。
+/// 符号传描边的基础名（Tool.symbol），这里套实心（.fill），菜单里同一个名字是描边版
 struct KindTile: View {
   let symbol: String
   let color: Color
@@ -136,16 +154,23 @@ struct KindTile: View {
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
     Image(systemName: symbol)
-      .font(.system(size: size * 0.5, weight: .semibold))
+      .symbolVariant(.fill)
+      .font(.system(size: size * 0.54, weight: .semibold))
       .foregroundStyle(.white)
       .frame(width: size, height: size)
       .background(
         shape.fill(
           LinearGradient(
-            colors: [color.opacity(0.95), color.mix(with: .black, by: 0.18)], startPoint: .top,
-            endPoint: .bottom))
+            colors: [color, color.mix(with: .black, by: 0.14)], startPoint: .top, endPoint: .bottom)
+        )
       )
-      .overlay(shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
+      .overlay(
+        shape.strokeBorder(
+          LinearGradient(
+            colors: [.white.opacity(0.42), .white.opacity(0.06)], startPoint: .top,
+            endPoint: .bottom),
+          lineWidth: 0.5)
+      )
       .accessibilityHidden(true)
   }
 }

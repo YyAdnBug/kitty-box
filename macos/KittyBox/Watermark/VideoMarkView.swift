@@ -115,7 +115,7 @@ struct VideoMarkView: View {
 
   var body: some View {
     ToolPage(tool: .video) {
-      Button("换一个视频…", systemImage: "film.stack") { Navigator.shared.importing = true }
+      Button("换一个视频…", systemImage: "plus") { Navigator.shared.importing = true }
         .help("换一个视频（⌘O）")
         .disabled(model.busy)
       Button("清空框", systemImage: "trash") { model.rects = [] }

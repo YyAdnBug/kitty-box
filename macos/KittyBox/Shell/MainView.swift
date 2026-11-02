@@ -1,5 +1,5 @@
 // 主窗口（A1、A2，2026-10-30 改成侧边栏）：左边侧边栏按「压缩」「转换」「修图」分组列出八个工具（家族色块 + 名字，还有没处理完的
-// 数一个角标），右边是选中的工具页（ToolPage）。照 Kitty Tools 的设置窗：侧边栏不能收起（没有收起按钮），选中自己画成品牌粉；
+// 数一个角标；色块按组上色：棕、蓝、靛蓝一族，组里一个工具一个邻近色，Style.Family），右边是选中的工具页（ToolPage）。照 Kitty Tools 的设置窗：侧边栏不能收起（没有收起按钮），选中自己画成品牌粉；
 // 窗口工具栏什么都不放、不画底色、不显示标题，标题和操作都在各页的页头里——这样顶上一条只有侧边栏和窗口底两种颜色。
 // 侧栏选中自己画（SidebarRow）：AppKit 画侧栏选中会把强调色压深（品牌粉变暗红），同 Kitty Tools 关掉原生高亮
 // （NativeHighlightOff）再按系统同样的几何画一块。
@@ -28,16 +28,20 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     }
   }
 
+  /// 描边的基础名：菜单里就是描边版，色块（KindTile）里套成实心。都是 macOS 15 就有的名字
   var symbol: String {
     switch self {
-    case .pack: "archivebox.fill"
-    case .unpack: "shippingbox.and.arrow.backward.fill"
+    case .pack: "archivebox"
+    case .unpack: "arrow.up.bin"
     case .convert: "photo.on.rectangle.angled"
-    case .videoConvert: "play.rectangle.on.rectangle.fill"
-    case .cutout: "person.and.background.dotted"
+    case .videoConvert: "play.rectangle.on.rectangle"
+    // 访达「去除背景」快速操作用的同一个
+    case .cutout: "circle.rectangle.filled.pattern.diagonalline"
     case .aiMark: "sparkles"
-    case .erase: "paintbrush.pointed.fill"
-    case .video: "film.fill"
+    // 「照片」的「清理」也是橡皮擦
+    case .erase: "eraser"
+    // 画面右上角填实一块：角上的台标
+    case .video: "inset.filled.topright.rectangle"
     }
   }
 
@@ -45,8 +49,12 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     switch self {
     case .pack: Style.Family.pack
     case .unpack: Style.Family.unpack
-    case .convert, .videoConvert: Style.Family.convert
-    case .cutout, .aiMark, .erase, .video: Style.Family.watermark
+    case .convert: Style.Family.convert
+    case .videoConvert: Style.Family.videoConvert
+    case .cutout: Style.Family.cutout
+    case .aiMark: Style.Family.aiMark
+    case .erase: Style.Family.erase
+    case .video: Style.Family.video
     }
   }
 

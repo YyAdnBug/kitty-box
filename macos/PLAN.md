@@ -151,7 +151,7 @@
   - 关于窗口是品牌页：奶油底、96 pt 图标、圆体字标、品牌粉版本胶囊、更新日志一个版本一张卡。
 - **中间是表格**（打包、解压、图片转换）：可调列宽，列名称（带缩略图 / 图标）、种类、大小、尺寸、转换后的大小和差多少（−72% 染绿）、状态；右键在访达中显示 / 打开 / 重试 / 移除，双击打开，⌫ 移除选中的。Gemini 角标是左边一列缩略图、右边预览。
 - **底下状态栏**（28 pt、11 pt 字，同访达窗口底边）：「4 张 · 已转 2 · 1 张没转成」「2 项 · 打包 120 个文件 · 忽略 8 项 查看 · 1 个文件名 Windows 不认 查看」（查看弹出清单）、做完的结果和「在访达中显示」、进度。
-- **空着时**整页是拖放区：家族色圆底符号、标题、说明、「添加文件…」和「或拖进来、按 ⌘V 粘贴」；文件拖着经过整页描一圈家族色。
+- **空着时**整页是拖放区：56 pt 家族色块（同页头、侧边栏的那个）、标题、说明、「添加文件…」和「或拖进来、按 ⌘V 粘贴」；文件拖着经过整页描一圈家族色。
 - **空格快速查看**（M6，`Shell/SpacePreview.swift`）：表格和 Gemini 的列表里选中按空格，系统的快速查看面板预览（做好了的看结果，还没做的看原文件；←→ 换一个，再按空格关掉）。白名单加了 QuickLook（box-native §2）。
 - **拖出去**（M5）：图片转换、解压的表格和 Gemini 角标的列表里，做好的行能直接拖到访达或别的 App（拖的是结果；还没做的拖原图）。
 - **做完提醒**（M5）：一件事做完（打包、一队解压、一批图、视频导出）时 App 在后台，程序坞图标跳一下（只跳一次）。不发系统通知（UserNotifications 不在白名单，也不想多要一个授权）。
@@ -190,13 +190,13 @@
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyBoxApp.swift`（`@main`，主窗口、设置窗口）、`SettingsView.swift`（设置：通用、模型，M7）、`Services.swift`（访达「服务」菜单的五项，M5；访达扩展交过来的网址，M9）、`AppDelegate.swift`（启动时登记服务；`application(_:open:)`：拖到程序坞图标上、「打开方式」选了本 App 的文件交给 Navigator，访达扩展的网址交给指明的工具；能收哪些写在 `Config/Info.plist` 的 `CFBundleDocumentTypes`：压缩包 Alternate，其余 None） |
-| `Shell/` | `MainView.swift`（主窗口：侧边栏 + 工具页，`Tool` 八个工具和「压缩 / 转换 / 修图」三组，侧边栏自己画的品牌粉选中，「添加文件…」弹选文件、收到文件问交给谁）、`ToolPage.swift`（工具页的骨架：页头、右边选项栏和选项卡片、状态栏，空着时的拖放区、整页收拖放的描边）、`Paste.swift`（⌘V：剪贴板里的文件或图片数据交给 Navigator）、`FileThumb.swift`（缩略图和表格里的种类、大小、尺寸、转换后差多少）、`ResultLine.swift`（做完 / 没做成的那一行字）、`Navigator.swift`（选中哪个工具 + 收进来的文件往哪送，见 §2「界面」；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`FileBatch.swift`（一批文件交给同一件事的列表模型和一行的样子：图片转换、AI 水印、去背景、视频转换共用）、`BatchPreview.swift`（一批图的缩略图网格和点开的大图、前后对比 BeforeAfter：AI 水印、去背景共用，M9）、`SpacePreview.swift`（空格快速查看）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度：品牌粉、奶油底、选中色、发丝线、品牌粉主按钮，加四类工具的家族色和画布上浮着的控制栏）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），不拷 `Accent.swift`（设置窗口 M7 才有，见 §2「界面」） |
+| `Shell/` | `MainView.swift`（主窗口：侧边栏 + 工具页，`Tool` 八个工具和「压缩 / 转换 / 修图」三组，侧边栏自己画的品牌粉选中，「添加文件…」弹选文件、收到文件问交给谁）、`ToolPage.swift`（工具页的骨架：页头、右边选项栏和选项卡片、状态栏，空着时的拖放区、整页收拖放的描边）、`Paste.swift`（⌘V：剪贴板里的文件或图片数据交给 Navigator）、`FileThumb.swift`（缩略图和表格里的种类、大小、尺寸、转换后差多少）、`ResultLine.swift`（等着 / 做完 / 没做成的那一行字：没做成是红圆叹号，点了停止的是灰色停止图标）、`Navigator.swift`（选中哪个工具 + 收进来的文件往哪送，见 §2「界面」；各工具页的状态放这里）、`FreeName.swift`（重名加「 2」、名字后加「-去水印」，各工具共用）、`FileBatch.swift`（一批文件交给同一件事的列表模型和一行的样子：图片转换、AI 水印、去背景、视频转换共用）、`BatchPreview.swift`（一批图的缩略图网格和点开的大图、前后对比 BeforeAfter：AI 水印、去背景共用，M9）、`SpacePreview.swift`（空格快速查看）、`Style.swift`（从 Kitty Tools 的同名文件摘出用得上的刻度：品牌粉、奶油底、选中色、发丝线、品牌粉主按钮，加八个工具的家族色（压缩棕、转换蓝、修图靛蓝三族，组里一个工具一个邻近色）和画布上浮着的控制栏）、`Subprocess.swift`（从 Kitty Tools 拷来，加了 `directory`）、`Prefs.swift`（偏好键名）。强调色跟随系统（`AccentColor.colorset` 是品牌粉），不拷 `Accent.swift`（设置窗口 M7 才有，见 §2「界面」） |
 | `Archive/` | `ZipNames.swift`（中央目录读取和编码判断）、`IgnoreRules.swift`（忽略规则匹配）、`WindowsNames.swift`（Windows 不认的文件名）、`Archiver.swift`（选引擎、拼参数、跑子进程、解完的清理和挪位置）、`PackView.swift`（打包页和它的 PackModel）、`UnpackView.swift`（解压页和它的 UnpackModel：一个接一个解、就地问密码） |
 | `Cutout/` | `Cutout.swift`（精细 = 抠图模型 Matting、系统 = Vision 抠主体，换背景、存 PNG）、`CutoutView.swift`（去背景页） |
 | `VideoConvert/` | `VideoConverter.swift`（MP4 / HEVC / GIF / M4A，缩到 1080p–480p）、`VideoConvertView.swift`（视频转换页） |
 | `ImageConvert/` | `ImageConverter.swift`（ImageIO 读写、转正方向、图标格式）、`ConvertView.swift`（转换页和它的 ConvertModel） |
 | `Watermark/` | `GeminiMark.swift`（找星标、反解、另存）、`VideoDelogo.swift`（第一帧、补像素、导出）、`AIMark.swift`（AI 水印：Gemini 星标、文字水印找位置再补）、`AIModel.swift`（M9 前叫 InpaintModel：三个补图模型和抠图模型的来源、下载、校验、解开、编译，ModelDownloads 状态）、`Inpainter.swift`（补图：按模型的边长裁、补、羽化贴回）、`EraseCanvas.swift`（画笔擦除：一笔一擦、选文字、撤销、缩放、对比、存储）、`AIMarkView.swift`（AI 水印页，也去掉这些字）、`VideoMarkView.swift`（视频台标：第一帧上拖框、导出）、`CompareSlider.swift`（前后对比：拖中间的线） |
-| `Resources/` | `Assets.xcassets`（小猫图标）、`gemini-alpha-*.bin`、`7zz-LICENSE.txt`、`gemini-watermark-LICENSE.txt`、`lama-LICENSE.txt`、`migan-LICENSE.txt`、`birefnet-LICENSE.txt`；`changelog.json` 第一次发版时加 |
+| `Resources/` | `AppIcon.icon`（小猫图标，Icon Composer 文档，`brand-icons.swift` 生成；macOS 15 用 Xcode 压平的 `AppIcon.icns`）、`Assets.xcassets`（强调色）、`gemini-alpha-*.bin`、`7zz-LICENSE.txt`、`gemini-watermark-LICENSE.txt`、`lama-LICENSE.txt`、`migan-LICENSE.txt`、`birefnet-LICENSE.txt`；`changelog.json` 第一次发版时加 |
 | `macos/` | `Config/{Base,Debug,Release}.xcconfig`（`Tests.xcconfig` M1 加）、`build-dmg.sh`、`fetch-vendor.sh`（拉 7zz 和模型到被忽略的 `Vendor/`，7zz 的许可证写到 `Resources/7zz-LICENSE.txt` 入库）、`brand-icons.swift`（同一只小黑猫扒着纸箱，青绿底板） |
 | `macos/KittyBoxFinder/` | 访达扩展（M9）：`FinderMenu.swift`（右键第一层「用 Kitty Box …」、文件夹空白处「新建文件」）、`Templates/`（新建文件的五个模板）；设置在 `Config/Finder.xcconfig`、`Finder-Info.plist`、`Finder.entitlements` |
 | 仓库根目录 | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/box-native.mdc`、`.gitignore` |

@@ -1,5 +1,5 @@
 // 一批图的预览（AI 水印、去背景共用）。M9 改版（用户说「预览区域太小，能不能选中之后列表变成详情、名字到预览顶上去」）：
-// - 平时一格一格的缩略图（同「照片」的网格）：图、名字、做到哪了（右上角对勾 / 叹号 / 转圈），点一格看大图；
+// - 平时一格一格的缩略图（同「照片」的网格）：图、名字、做到哪了（右上角对勾 / 红圆叹号 / 灰色停止 / 转圈），点一格看大图；
 // - 大图占满整块：名字、状态（做好了能点开、在访达中显示）挪到顶上一条，左边「全部 N 张」回到网格（Esc），
 //   右边第几张、上一张 / 下一张（← →）；做好了是前后对比（拖中间的线，能放大），空格快速查看；
 // - 只有一张时直接是大图。
@@ -96,14 +96,16 @@ struct BatchPreview: View {
 
   @ViewBuilder private func menu(_ item: FileBatch.Item) -> some View {
     if let url = item.result {
-      Button("打开结果") { NSWorkspace.shared.open(url) }
+      Button("打开结果", systemImage: "arrow.up.forward.app") { NSWorkspace.shared.open(url) }
     }
-    Button("在访达中显示") {
+    Button("在访达中显示", systemImage: "folder") {
       NSWorkspace.shared.activateFileViewerSelecting([item.result ?? item.source])
     }
-    if let handOff { Button("改用画笔擦除") { handOff(item.source) } }
+    if let handOff {
+      Button("改用画笔擦除", systemImage: Tool.erase.symbol) { handOff(item.source) }
+    }
     Divider()
-    Button("移除") { batch.remove(item.id) }.disabled(batch.running)
+    Button("移除", systemImage: "minus.circle") { batch.remove(item.id) }.disabled(batch.running)
   }
 
   // MARK: 大图
@@ -201,6 +203,10 @@ private struct BatchCard: View {
     case .done:
       Image(systemName: "checkmark.circle.fill").font(.title3)
         .symbolRenderingMode(.palette).foregroundStyle(.white, .green)
+    // 点了停止的：灰色，不算出错
+    case .failed(FailLine.stopped):
+      Image(systemName: "stop.circle.fill").font(.title3)
+        .symbolRenderingMode(.palette).foregroundStyle(.white, .gray)
     case .failed:
       Image(systemName: "exclamationmark.circle.fill").font(.title3)
         .symbolRenderingMode(.palette).foregroundStyle(.white, .red)
@@ -209,7 +215,7 @@ private struct BatchCard: View {
 
   @ViewBuilder private var line: some View {
     switch item.state {
-    case .waiting: Text("等待中").foregroundStyle(.secondary)
+    case .waiting: WaitingLine()
     case .running:
       if let progress = item.progress {
         ProgressView(value: progress)
@@ -252,8 +258,7 @@ struct BeforeAfter: View {
           .clipShape(RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous))
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if unreadable {
-        Label("读不出这张图", systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(.secondary)
+        FailLine(reason: "读不出这张图")
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)

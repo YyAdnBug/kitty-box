@@ -12,7 +12,7 @@ struct SettingsView: View {
   var body: some View {
     TabView {
       GeneralSettings().tabItem { Label("通用", systemImage: "gearshape") }
-      ModelSettings().tabItem { Label("模型", systemImage: "cpu") }
+      ModelSettings().tabItem { Label("模型", systemImage: "brain") }
     }
     .frame(width: 560)
   }
@@ -236,7 +236,7 @@ private struct ModelRow: View {
       case .missing:
         Button("下载") { downloads.start(model) }
       case .failed(let reason):
-        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).help(reason)
+        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).help(reason)
         Button("重试") { downloads.start(model) }
       }
     }

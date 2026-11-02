@@ -293,7 +293,7 @@ struct EraseCanvas: View {
 
   var body: some View {
     ToolPage(tool: .erase) {
-      Button("换一张…", systemImage: "photo.badge.plus") { Navigator.shared.importing = true }
+      Button("换一张…", systemImage: "plus") { Navigator.shared.importing = true }
         .help("换一张图（⌘O）")
         .disabled(model.busy)
       Button("存储") { model.save() }
@@ -583,13 +583,7 @@ struct ModelBanner: View {
       }
     case .failed(let reason):
       HStack(spacing: 10) {
-        // 只染图标：红字在浅底上对比度不够
-        Label {
-          Text(reason)
-        } icon: {
-          Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-        }
-        .font(.callout).lineLimit(2)
+        FailLine(reason: reason).font(.callout)
         Spacer()
         Button("重试") { downloads.start(choice) }
       }

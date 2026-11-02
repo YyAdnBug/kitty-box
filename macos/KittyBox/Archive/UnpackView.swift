@@ -153,7 +153,7 @@ import UniformTypeIdentifiers
         do {
           state = .done(try await ProcessInfo.processInfo.working("正在解压") { try await task.value })
         } catch is CancellationError {
-          state = .failed("已停止")
+          state = .failed(FailLine.stopped)
         } catch Archiver.Failure.needsPassword {
           state = .needsPassword(again: false)
         } catch Archiver.Failure.wrongPassword {
@@ -203,7 +203,7 @@ struct UnpackView: View {
       Toggle("解完移到废纸篓", isOn: $trashArchive)
         .toggleStyle(.checkbox)
         .help("解好之后把压缩包挪到废纸篓（能放回去；分卷包不挪）")
-      Button("清掉做完的", systemImage: "checklist.checked") { model.clearFinished() }
+      Button("清掉做完的", systemImage: "checkmark.circle.badge.xmark") { model.clearFinished() }
         .help("清掉解完的和没解成的")
         .disabled(!model.jobs.contains(where: \.isFinished))
     } content: {
@@ -263,27 +263,27 @@ struct UnpackView: View {
     }
     .contextMenu(forSelectionType: UnpackModel.Job.ID.self) { ids in
       if ids.count == 1, let id = ids.first {
-        Button("看看里面") { peeking = job(id) }
+        Button("看看里面", systemImage: "text.page.badge.magnifyingglass") { peeking = job(id) }
       }
-      Button("在访达中显示") {
+      Button("在访达中显示", systemImage: "folder") {
         let urls = ids.compactMap { id in job(id).map { $0.result ?? $0.archive } }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
       }
       if ids.contains(where: { if case .running = job($0)?.state { true } else { false } }) {
-        Button("停止") { for id in ids { model.stop(id) } }
+        Button("停止", systemImage: "stop.circle") { for id in ids { model.stop(id) } }
       }
       if ids.contains(where: { if case .held = job($0)?.state { true } else { false } }) {
         Button("开始解压") { for id in ids { model.retry(id) } }
       }
       if ids.contains(where: { job($0)?.isFinished == true && job($0)?.result == nil }) {
-        Button("重试") { for id in ids { model.retry(id) } }
+        Button("重试", systemImage: "arrow.clockwise") { for id in ids { model.retry(id) } }
       }
       // 包旁边写不进去（挂载的磁盘映像、只读的共享）时的出路
       if ids.contains(where: { job($0)?.canRetry == true }) {
-        Button("解到…") { unpack(ids) }
+        Button("解到…", systemImage: "square.and.arrow.down") { unpack(ids) }
       }
       Divider()
-      Button("移除") { model.remove(ids) }
+      Button("移除", systemImage: "minus.circle") { model.remove(ids) }
     } primaryAction: { ids in
       // 双击：解好的打开，还没解好的看看里面
       for id in ids {
@@ -354,7 +354,7 @@ private struct JobStatus: View {
         Button("开始解压", action: retry).textLink().fixedSize()
       }
     case .waiting:
-      Label("等待中", systemImage: "clock").foregroundStyle(.secondary)
+      WaitingLine()
     case .running:
       RunningProgress(label: "正在解压", value: job.progress, stop: stop)
         .foregroundStyle(.secondary)

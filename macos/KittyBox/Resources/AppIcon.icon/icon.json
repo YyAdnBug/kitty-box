@@ -1,0 +1,253 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.38824,0.87843,0.82353,1.00000",
+          "srgb:0.07059,0.58431,0.54510,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.09020,0.52941,0.49412,1.00000",
+          "srgb:0.04314,0.27059,0.25098,1.00000"
+        ]
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "beans.svg",
+          "name" : "beans"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "paws.svg",
+          "name" : "paws"
+        }
+      ],
+      "name" : "Paws",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.89412,0.78431,0.60392,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.80000,0.80000,0.80000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "flap-tape.svg",
+          "name" : "flap-tape"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.86667,0.70980,0.47843,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.55000,0.55000,0.55000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "front-flap.svg",
+          "name" : "front-flap"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.87059,0.75294,0.55686,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.72000,0.72000,0.72000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "tape.svg",
+          "name" : "tape"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.82745,0.63529,0.40000,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.42000,0.42000,0.42000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "front.svg",
+          "name" : "front"
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "Box",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "glints.svg",
+          "name" : "glints"
+        },
+        {
+          "image-name" : "details.svg",
+          "name" : "details"
+        },
+        {
+          "hidden-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "eyes.svg",
+          "name" : "eyes"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name-specializations" : [
+            {
+              "value" : "head.svg"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "head-mono.svg"
+            }
+          ],
+          "name" : "head"
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "Kitten",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.45
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.73725,0.51765,0.27451,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.34000,0.34000,0.34000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "back-flaps.svg",
+          "name" : "back-flaps"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.51765,0.32157,0.16471,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.00000,0.00000,0.00000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "inside.svg",
+          "name" : "inside"
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "Back",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.35
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}

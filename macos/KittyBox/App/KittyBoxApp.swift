@@ -5,6 +5,8 @@
 // 编辑菜单的「粘贴」换成自己的：⌘V 能把文件交给工具（Paste）；文件菜单「添加文件…」⌘O；「工具」菜单 ⌘1–⌘8 切工具；
 // 画笔擦除的「存储」⌘S（文件）、撤销 / 重做（编辑，别处照系统的发给输入框）、放大 / 缩小 / 适合窗口（显示）在菜单里（EraseCommands）；
 // 帮助菜单换成打开仓库的说明页、报告问题（没有帮助手册，系统默认那一项只会说「帮助不可用」）。
+// 换成自己的这些菜单项都配上系统符号（同 AppKit 给剪切、拷贝、粘贴自动配的；26 上菜单显示图标，27 默认藏起来），
+// 「工具」菜单用各工具描边的符号（Tool.symbol）。
 
 import AppKit
 import SwiftUI
@@ -59,16 +61,22 @@ private struct AppCommands: Commands {
   var body: some Commands {
     // 「粘贴」换成自己的（Paste）：输入框里照常，别处 ⌘V 把剪贴板里的文件交给工具；同组的剪切、拷贝、全选照系统的发给响应链
     CommandGroup(replacing: .pasteboard) {
-      Button("剪切") { NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) }
-        .keyboardShortcut("x")
-      Button("拷贝") { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) }
-        .keyboardShortcut("c")
-      Button("粘贴") { Paste.perform() }.keyboardShortcut("v")
-      Button("全选") { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
-        .keyboardShortcut("a")
+      Button("剪切", systemImage: "scissors") {
+        NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
+      }
+      .keyboardShortcut("x")
+      Button("拷贝", systemImage: "document.on.document") {
+        NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
+      }
+      .keyboardShortcut("c")
+      Button("粘贴", systemImage: "document.on.clipboard") { Paste.perform() }.keyboardShortcut("v")
+      Button("全选", systemImage: "character.textbox") {
+        NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+      }
+      .keyboardShortcut("a")
     }
     CommandGroup(replacing: .newItem) {
-      Button("添加文件…") {
+      Button("添加文件…", systemImage: "plus") {
         openWindow(id: KittyBoxApp.windowID)
         Navigator.shared.importing = true
       }
@@ -105,7 +113,7 @@ private struct AppCommands: Commands {
     }
     CommandMenu("工具") {
       ForEach(Array(Tool.allCases.enumerated()), id: \.element) { index, tool in
-        Button(tool.title) {
+        Button(tool.title, systemImage: tool.symbol) {
           openWindow(id: KittyBoxApp.windowID)
           Navigator.shared.tool = tool
         }
@@ -113,16 +121,21 @@ private struct AppCommands: Commands {
       }
     }
     CommandGroup(replacing: .appInfo) {
-      Button("关于 Kitty Box") { openWindow(id: KittyBoxApp.aboutID) }
-      Button("检查更新…") {
+      Button("关于 Kitty Box", systemImage: "info.circle") { openWindow(id: KittyBoxApp.aboutID) }
+      Button("检查更新…", systemImage: "arrow.down.circle") {
         openWindow(id: KittyBoxApp.aboutID)
         Task { await Updater.shared.check() }
       }
     }
     CommandGroup(replacing: .help) {
       // ⌘? 同系统默认的那一项：换掉它时快捷键别跟着丢
-      Button("Kitty Box 帮助") { NSWorkspace.shared.open(Self.readme) }.keyboardShortcut("?")
-      Button("报告问题…") { NSWorkspace.shared.open(Self.issues) }
+      Button("Kitty Box 帮助", systemImage: "questionmark.circle") {
+        NSWorkspace.shared.open(Self.readme)
+      }
+      .keyboardShortcut("?")
+      Button("报告问题…", systemImage: "exclamationmark.bubble") {
+        NSWorkspace.shared.open(Self.issues)
+      }
     }
   }
 }

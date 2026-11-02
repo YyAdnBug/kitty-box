@@ -151,7 +151,7 @@ struct AboutView: View {
         Label {
           Text(reason).lineLimit(2)
         } icon: {
-          Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+          Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
         }
         Button("再试一次") { Task { await updater.check() } }.buttonStyle(.link)
         Link("去发布页", destination: Updater.releasesPage).font(.caption)

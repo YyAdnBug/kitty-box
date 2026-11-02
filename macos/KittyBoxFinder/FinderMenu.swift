@@ -1,5 +1,6 @@
 // 访达扩展（M9）：访达右键菜单的第一层，不用再进「服务」（用户问「右键菜单必须放在服务里面吗，能不能挪出来」，又要「右键新建任意文件」）。
-// - 选中文件右键：「用 Kitty Box 打包 / 解压 / 转换图片 / 转换视频 / 去 AI 水印 / 去背景」，只列选中的文件全都用得上的。
+// - 选中文件右键：「用 Kitty Box 打包 / 解压 / 转换图片 / 转换视频 / 去 AI 水印 / 去背景」，只列选中的文件全都用得上的；
+//   各带 App 里那个工具的符号（模板图、单色，同访达自己的菜单项，不放彩色色块）。
 //   点了用 App 自己的网址把工具和文件交给 App：<App 的 bundle id>://open?tool=pack&file=/a&file=/b（App 那边是 Services.request）。
 // - 文件夹空白处右键：「新建文件 ▸」文本文件、Markdown、Word、Excel、PPT（模板在 Templates/，Word 用系统 textutil 转的，
 //   Excel、PPT 是手写的最小 Office Open XML），再加上「新建文件模板」文件夹里用户自己放的任何文件（放什么就能新建什么）。
@@ -30,6 +31,18 @@ final class FinderMenu: FIFinderSync {
       case .videoConvert: "用 Kitty Box 转换视频"
       case .aiMark: "用 Kitty Box 去 AI 水印"
       case .cutout: "用 Kitty Box 去背景"
+      }
+    }
+
+    /// 同 App 里各工具的符号（Tool.symbol，描边的基础名）
+    var symbol: String {
+      switch self {
+      case .pack: "archivebox"
+      case .unpack: "arrow.up.bin"
+      case .convert: "photo.on.rectangle.angled"
+      case .videoConvert: "play.rectangle.on.rectangle"
+      case .aiMark: "sparkles"
+      case .cutout: "circle.rectangle.filled.pattern.diagonalline"
       }
     }
 
@@ -92,8 +105,10 @@ final class FinderMenu: FIFinderSync {
     }
     let menu = NSMenu()
     for (index, tool) in Tool.allCases.enumerated() where urls.allSatisfy(tool.fits) {
-      menu.addItem(withTitle: tool.title, action: #selector(hand(_:)), keyEquivalent: "").tag =
-        index
+      let item = menu.addItem(withTitle: tool.title, action: #selector(hand(_:)), keyEquivalent: "")
+      item.tag = index
+      // 系统符号本来就是模板图：访达按菜单的字色画
+      item.image = NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil)
     }
     return menu
   }

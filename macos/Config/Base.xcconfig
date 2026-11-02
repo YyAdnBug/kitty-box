@@ -41,3 +41,6 @@ LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
 // 同 Xcode 模板 project 层：拷贝阶段不 strip。拷进包时就签名的访达扩展本来也 strip 不了，每次构建只多三条 warning；
 // App 自己的可执行文件 archive 时照常 strip（STRIP_INSTALLED_PRODUCT）
 COPY_PHASE_STRIP = NO
+// App 图标是 Icon Composer 的 AppIcon.icon（brand-icons.swift 生成）：macOS 26 起用它的液态玻璃图标，
+// macOS 15 读回退的 AppIcon.icns；all = 这份 icns 带齐 16–512 @1x / @2x 每个尺寸（默认只有 16、128 两档，2026-11-02 实测）
+ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR = all

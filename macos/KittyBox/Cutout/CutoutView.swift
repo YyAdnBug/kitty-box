@@ -17,7 +17,7 @@ struct CutoutView: View {
     ToolPage(tool: .cutout) {
       Button("添加文件…", systemImage: "plus") { Navigator.shared.importing = true }
         .help("添加图片（⌘O）")
-      Button("清掉做完的", systemImage: "checklist.checked") { batch.clearFinished() }
+      Button("清掉做完的", systemImage: "checkmark.circle.badge.xmark") { batch.clearFinished() }
         .help("清掉做好的")
         .disabled(batch.outputs.isEmpty || batch.running)
       if batch.running {

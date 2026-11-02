@@ -16,7 +16,7 @@ struct VideoConvertView: View {
     ToolPage(tool: .videoConvert) {
       Button("添加文件…", systemImage: "plus") { Navigator.shared.importing = true }
         .help("添加视频（⌘O）")
-      Button("清掉做完的", systemImage: "checklist.checked") { model.clearFinished() }
+      Button("清掉做完的", systemImage: "checkmark.circle.badge.xmark") { model.clearFinished() }
         .help("清掉转好的")
         .disabled(model.outputs.isEmpty || model.running)
       if model.running {
@@ -87,10 +87,12 @@ struct VideoConvertView: View {
       TableColumn("时长") { item in
         if let trim = item.trim {
           // 剪过的：写剪下的那一段多长，染品牌粉
-          Label(VideoPreview.clock(trim.upperBound - trim.lowerBound), systemImage: "scissors")
-            .foregroundStyle(Style.brand)
-            .help(
-              "只转 \(VideoPreview.clock(trim.lowerBound)) – \(VideoPreview.clock(trim.upperBound))")
+          Label(
+            VideoPreview.clock(trim.upperBound - trim.lowerBound), systemImage: "timeline.selection"
+          )
+          .foregroundStyle(Style.brand)
+          .help(
+            "只转 \(VideoPreview.clock(trim.lowerBound)) – \(VideoPreview.clock(trim.upperBound))")
         } else {
           VideoLengthText(url: item.source).foregroundStyle(.secondary)
         }
@@ -102,7 +104,7 @@ struct VideoConvertView: View {
         .width(min: 54, ideal: 64)
       TableColumn("转换后") { item in
         switch item.state {
-        case .waiting: Text("等待中").foregroundStyle(.tertiary)
+        case .waiting: WaitingLine()
         case .running:
           if let progress = item.progress {
             HStack(spacing: 6) {
@@ -128,15 +130,19 @@ struct VideoConvertView: View {
     }
     .contextMenu(forSelectionType: FileBatch.Item.ID.self) { ids in
       let picked = model.items.filter { ids.contains($0.id) }
-      Button("打开原视频") { for item in picked { NSWorkspace.shared.open(item.source) } }
-      if picked.contains(where: { $0.result != nil }) {
-        Button("打开转好的") { for url in picked.compactMap(\.result) { NSWorkspace.shared.open(url) } }
+      Button("打开原视频", systemImage: "arrow.up.forward.app") {
+        for item in picked { NSWorkspace.shared.open(item.source) }
       }
-      Button("在访达中显示") {
+      if picked.contains(where: { $0.result != nil }) {
+        Button("打开转好的", systemImage: "arrow.up.forward.app") {
+          for url in picked.compactMap(\.result) { NSWorkspace.shared.open(url) }
+        }
+      }
+      Button("在访达中显示", systemImage: "folder") {
         NSWorkspace.shared.activateFileViewerSelecting(picked.map { $0.result ?? $0.source })
       }
       Divider()
-      Button("移除") { model.remove(ids) }
+      Button("移除", systemImage: "minus.circle") { model.remove(ids) }
     } primaryAction: { ids in
       for item in model.items where ids.contains(item.id) {
         NSWorkspace.shared.open(item.result ?? item.source)

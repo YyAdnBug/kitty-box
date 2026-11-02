@@ -168,7 +168,7 @@ import SwiftUI
           update(id) {
             switch result {
             case .success(let url): $0.state = .done(url)
-            case .failure(is CancellationError): $0.state = .failed("已停止")
+            case .failure(is CancellationError): $0.state = .failed(FailLine.stopped)
             case .failure(let error): $0.state = .failed(error.localizedDescription)
             }
           }
@@ -219,7 +219,7 @@ struct BatchRow: View {
   @ViewBuilder private var status: some View {
     switch item.state {
     case .waiting:
-      Text("等待中").foregroundStyle(.secondary)
+      WaitingLine()
     case .running:
       HStack(spacing: 6) {
         if let progress = item.progress {

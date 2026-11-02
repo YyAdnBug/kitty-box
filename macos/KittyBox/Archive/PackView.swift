@@ -157,9 +157,11 @@ struct PackView: View {
       ForEach(model.items.map(FileRow.init)) { TableRow($0) }
     }
     .contextMenu(forSelectionType: URL.self) { urls in
-      Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting(Array(urls)) }
+      Button("在访达中显示", systemImage: "folder") {
+        NSWorkspace.shared.activateFileViewerSelecting(Array(urls))
+      }
       Divider()
-      Button("移除") { model.remove(urls) }
+      Button("移除", systemImage: "minus.circle") { model.remove(urls) }
     } primaryAction: { urls in
       for url in urls { NSWorkspace.shared.open(url) }
     }
@@ -188,11 +190,11 @@ struct PackView: View {
       Text("还没选要打包的东西")
     } else if let plan = model.plan, !plan.clashes.isEmpty {
       // 不同文件夹里的同名东西：包里只放得下一个，不让打（不同于下面 Windows 不认的名字，那个照样能打）
-      // 只染图标：红字、橙字在浅底上对比度不够
+      // 只染图标：红字在浅底上对比度不够
       Label {
         Text("「\(plan.clashes.formatted(.list(type: .and)))」有同名的（在不同的文件夹里），包里只放得下一个，先移除一个")
       } icon: {
-        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
       }
     } else if let plan = model.plan {
       HStack(spacing: 6) {
@@ -212,11 +214,12 @@ struct PackView: View {
         }
         if !plan.windowsProblems.isEmpty {
           Text("·")
-          Label {
-            Text("\(plan.windowsProblems.count) 个文件名 Windows 不认")
-          } icon: {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-          }
+          // 只是提醒（照样能打）：系统的黄三角，字照状态栏的次要色
+          Label(
+            "\(plan.windowsProblems.count) 个文件名 Windows 不认",
+            systemImage: "exclamationmark.triangle.fill"
+          )
+          .symbolRenderingMode(.multicolor)
           Button("查看") { showsProblems = true }
             .textLink()
             .accessibilityLabel("查看 Windows 不认的文件名")

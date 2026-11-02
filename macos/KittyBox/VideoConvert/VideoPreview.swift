@@ -28,7 +28,7 @@ struct VideoPreview: View {
         if let trim = item.trim {
           Label(
             "只转 \(Self.clock(trim.lowerBound)) – \(Self.clock(trim.upperBound))（\(Self.clock(trim.upperBound - trim.lowerBound))）",
-            systemImage: "scissors"
+            systemImage: "timeline.selection"
           )
           .foregroundStyle(.secondary)
         }
@@ -36,7 +36,8 @@ struct VideoPreview: View {
         if item.trim != nil, !showsResult {
           Button("不剪了") { setTrim(nil) }.disabled(converting)
         }
-        Button("剪一段…", systemImage: "scissors") { Task { await trim() } }
+        // 同访达的「修剪」；剪刀是「剪切」的图
+        Button("剪一段…", systemImage: "timeline.selection") { Task { await trim() } }
           .help("拖两头的把手选一段，只转这一段")
           .disabled(showsResult || converting)
       }

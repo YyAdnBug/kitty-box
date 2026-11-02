@@ -1,6 +1,7 @@
 // VideoDelogo：补像素的纯函数（纯色底上框里补回底色、框外不动、羽化带在中间）；再真的造一段带白色台标的小视频，
 // 框上导出，台标那里变回底色、文件名是「原名-去水印」；带 AAC 音轨的视频导出后音频一包不差（原样搬过去，没重新编码，D6）。
 // 竖拍的（转 90°）框在转正后的第一帧上、补的也是那里，HEVC 出 HEVC；开头空着半秒的视频读得出第一帧、导出来第一帧不是黑的；
+// 片头黑着的视频拖进度条取得出后面那一刻的画面（转正），连着拖时页面停在最后要的那一刻；
 // 导出能停、不留半个文件；导出时再拖进别的视频不换（不然进度和结果落到新视频上），停下回到能接着框。
 
 import AVFoundation
@@ -10,12 +11,13 @@ import Testing
 
 @testable import KittyBox
 
-/// 造一段 160 × 120（可以给别的大小）、10 帧、1 秒的视频：蓝底，右上角 (120, 8) 起 30 × 16 的白块当台标
+/// 造一段 160 × 120（可以给别的大小）、10 帧（一秒 10 帧）的视频：蓝底，右上角 (120, 8) 起 30 × 16 的白块当台标
 /// （截图自检、视频转换也用）
-/// firstAt：第一帧放在几秒（有的视频能显示的第一帧不在 0）；transform：播放时怎么转（竖拍的转 90°）
+/// firstAt：第一帧放在几秒（有的视频能显示的第一帧不在 0）；transform：播放时怎么转（竖拍的转 90°）；
+/// black：开头几帧全黑、没有台标（片头）
 func makeTestVideo(
-  at url: URL, width: Int = 160, height: Int = 120, firstAt: Double = 0,
-  codec: AVVideoCodecType = .h264, transform: CGAffineTransform = .identity
+  at url: URL, width: Int = 160, height: Int = 120, frames: Int = 10, black: Int = 0,
+  firstAt: Double = 0, codec: AVVideoCodecType = .h264, transform: CGAffineTransform = .identity
 ) async throws {
   let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
   let input = AVAssetWriterInput(
@@ -31,7 +33,7 @@ func makeTestVideo(
   writer.add(input)
   #expect(writer.startWriting())
   writer.startSession(atSourceTime: .zero)
-  for frame in 0..<10 {
+  for frame in 0..<frames {
     while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(5)) }
     var buffer: CVPixelBuffer?
     CVPixelBufferPoolCreatePixelBuffer(nil, try #require(adaptor.pixelBufferPool), &buffer)
@@ -44,8 +46,9 @@ func makeTestVideo(
       for x in 0..<width {
         let logo = (120..<150).contains(x) && (8..<24).contains(y)
         let index = y * rowBytes + x * 4
+        // BGRA：蓝底
         (base[index], base[index + 1], base[index + 2], base[index + 3]) =
-          logo ? (255, 255, 255, 255) : (200, 120, 40, 255)  // BGRA：蓝底
+          frame < black ? (0, 0, 0, 255) : logo ? (255, 255, 255, 255) : (200, 120, 40, 255)
       }
     }
     CVPixelBufferUnlockBaseAddress(pixels, [])
@@ -241,6 +244,45 @@ struct VideoDelogoTests {
     let codec = try await track.load(.formatDescriptions).first.map(
       CMFormatDescriptionGetMediaSubType)
     #expect(codec == kCMVideoCodecType_HEVC)
+  }
+
+  /// 片头黑着、台标还没出来（用户的视频就是这样）：进度条拖到 1 秒取得出那一刻的画面（有台标，0 秒的是黑的），竖拍的也转正，
+  /// 拖到片尾也取得到；页面上连着拖（0.2 秒、1 秒），画面停在最后要的那一刻
+  @MainActor @Test func frameAtTime() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "kittybox-tests-\(UUID())")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "片头.mov")
+    try await makeTestVideo(at: source, frames: 20, black: 5, transform: portrait(height: 120))
+
+    let span = try await VideoDelogo.span(of: source)
+    #expect(span.lowerBound == 0 && span.upperBound > 1.8, "\(span)")
+    let start = try await VideoDelogo.frame(of: source, at: 0)
+    let later = try await VideoDelogo.frame(of: source, at: 1)
+    #expect(later.width == 120 && later.height == 160)
+    // 编码的帧上 (120, 8) 起的台标，转 90° 后在 (96, 120) 起 16 × 30
+    #expect(rgb(start, 104, 135).allSatisfy { $0 < 30 })
+    #expect(rgb(later, 104, 135).allSatisfy { $0 > 230 })
+    _ = try await VideoDelogo.frame(of: source, at: span.upperBound)
+
+    let model = VideoMarkModel()
+    model.load(source)
+    while model.busy { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(model.span == span)
+    model.seek(to: 0.2)
+    // 让它先去取 0.2 秒那一帧，取的时候再拖到 1 秒
+    await Task.yield()
+    model.seek(to: 1)
+    #expect(model.time == 1)
+    // 0.2 秒那一帧是黑的：停在它上面就是没追到最后要的那一刻
+    for _ in 0..<300 where rgb(try #require(model.frame), 104, 135)[0] < 230 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(rgb(try #require(model.frame), 104, 135).allSatisfy { $0 > 230 })
+    model.seek(to: 99)
+    #expect(model.time == span.upperBound)
+    model.seek(to: -1)
+    #expect(model.time == nil)
   }
 
   /// 导出到一半停下：报的是停下（不是「导出没成功」），旁边不留导了一半的文件

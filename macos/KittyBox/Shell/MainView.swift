@@ -80,7 +80,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     case .cutout: "自动抠出主体，背景换成透明或白色"
     case .aiMark: "一批图自动去掉 AI 水印，也能去掉指定的字"
     case .erase: "涂住水印、路人或杂物，或点选图上的字，松手就自动补上周围的样子"
-    case .video: "在第一帧上框住固定的台标，导出时逐帧补上"
+    case .video: "在画面上框住固定的台标，导出时逐帧补上"
     }
   }
 

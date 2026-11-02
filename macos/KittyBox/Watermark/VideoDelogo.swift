@@ -1,4 +1,5 @@
-// 视频固定台标（D4–D6）：在第一帧上框出台标（可以框几处），AVFoundation 逐帧交给 Core Image；每一帧只把框外一圈的小块读回来，
+// 视频固定台标（D4–D6）：在画面上框出台标（可以框几处；拖进度条选哪一帧都行，台标不动、框在哪一帧上都一样），
+// AVFoundation 逐帧交给 Core Image；每一帧只把框外一圈的小块读回来，
 // 框里的每个像素按到框外左右上下四条边的距离、对边上紧挨着的像素加权补上（越近越重，思路同 ffmpeg 的 delogo，代码自己写），
 // 框外再留一圈羽化带慢慢过渡，贴回画面。结果「原名-去水印」放在原视频旁边。
 // 导出（D6）：AVAssetReader 按视频合成读出补好的帧、AVAssetWriter 重新编码，编码跟原视频走（HEVC 出 HEVC，其余 H.264），
@@ -52,6 +53,29 @@ nonisolated enum VideoDelogo {
     try await track.load(.segments).first { !$0.isEmpty }?.timeMapping.target.start ?? .zero
   }
 
+  /// 进度条拖得到的一段（秒）：从第一段有画面的地方（firstShown）到片尾
+  static func span(of url: URL) async throws -> ClosedRange<Double> {
+    let asset = AVURLAsset(url: url)
+    guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+      throw Failure.noVideo
+    }
+    let start = try await firstShown(track).seconds
+    return start...max(start, try await asset.load(.duration).seconds)
+  }
+
+  /// 进度条拖到的那一刻的画面（同 firstFrame 按视频的方向转正）：片头黑着、台标还没出来的视频往后拖一点再框。
+  /// 前后各放宽 0.1 秒：附近有关键帧就用它、少解几帧，拖得跟手；片尾那一刻没有帧也取得到。
+  /// 放得更宽会跳到一秒外的关键帧、和进度条对不上（2026-11-02 实测）
+  static func frame(of url: URL, at seconds: Double) async throws -> CGImage {
+    // 每次新开一个 asset（同 firstFrame）：传进来的 asset 不能交给生成器的 @concurrent 取图（Swift 6 报数据竞争）
+    let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+    generator.appliesPreferredTrackTransform = true
+    let tolerance = CMTime(seconds: 0.1, preferredTimescale: 600)
+    generator.requestedTimeToleranceBefore = tolerance
+    generator.requestedTimeToleranceAfter = tolerance
+    return try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
+  }
+
   // MARK: 补像素（纯函数）
 
   /// pixels：RGBA 8 位、第 0 行在最上面的一小块；rect：要补的框（在这一小块里的坐标）。
@@ -88,7 +112,7 @@ nonisolated enum VideoDelogo {
 
   // MARK: 导出
 
-  /// rects：在第一帧上的像素坐标，左上角为原点。progress 在后台线程上报 0–1
+  /// rects：在转正后的画面上的像素坐标（每一帧一样大），左上角为原点。progress 在后台线程上报 0–1
   @concurrent static func export(
     _ source: URL, rects: [CGRect], progress: @escaping @Sendable (Double) -> Void
   ) async throws -> URL {

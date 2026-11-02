@@ -1,7 +1,9 @@
 // 视频台标（D4–D6）：拖进一段视频，第一帧铺在中间，在上面拖出台标的位置（可以框几处，框角的 × 删掉一处），点「导出」。
-// 导出好了画面换成前后对比（原视频和导出的第一帧，拖中间的线看），页头「对比」关掉接着框。
-// 页头：换一个视频、清空框、对比、导出（导出时换成「停止」，导了一半的不留）；底下状态栏写框了几处、导出进度和结果。
-// 框存的是第一帧的像素坐标（左上为原点），画面按比例缩放显示，拖的时候换算回去。
+// 画面下面浮着一条进度条（2026-11-02，用户的视频片头黑着、台标还没出来，框不了）：拖它或按 ← → 一秒一秒挪，换一帧来框；
+// 拖得快时只取最后要的那一刻。导出时灰着，换一个视频回到最前面。
+// 导出好了画面换成前后对比（原视频和导出的同一刻，拖中间的线看；对比时拖进度条两边一起换），页头「对比」关掉接着框。
+// 页头：换一个视频、清空框、对比、导出（导出时换成「停止」，导了一半的不留）；底下状态栏写框了几处、导出进度（同打包：进度条、百分比、停止）和结果。
+// 框存的是转正后画面的像素坐标（左上为原点；台标不动，每一帧一样大，框在哪一帧上都一样），画面按比例缩放显示，拖的时候换算回去。
 
 import AppKit
 import Observation
@@ -17,14 +19,22 @@ import SwiftUI
   }
 
   private(set) var source: URL?
+  /// 画面上的那一帧（time 那一刻的）
   private(set) var frame: CGImage?
-  /// 导出好的视频的第一帧：和 frame 拖线对比
+  /// 导出好的视频同一刻的那一帧：和 frame 拖线对比
   private(set) var resultFrame: CGImage?
   /// 画面上是不是在前后对比（导出好了自动打开；关掉才能接着框）
   var comparing = false
-  /// 第一帧上的像素坐标，左上为原点
+  /// 转正后画面的像素坐标，左上为原点
   var rects: [CGRect] = []
   private(set) var state = State.idle
+  /// 画面是第几秒的（进度条）；nil 是最前面那一帧（firstFrame，片头空着的那段之后）
+  private(set) var time: Double?
+  /// 进度条从几秒到几秒：开头空着的那段不算
+  private(set) var span: ClosedRange<Double> = 0...0
+  /// 画面现在是哪一刻的；正在取的那一帧回来前不再取（拖得快时只追最后要的那一刻）
+  @ObservationIgnored private var shown: Double?
+  @ObservationIgnored private var seeking = false
   /// 正在导出的那一次（「停止」取消它）
   @ObservationIgnored private var exporting: Task<Void, Never>?
 
@@ -42,6 +52,9 @@ import SwiftUI
     resultFrame = nil
     comparing = false
     rects = []
+    time = nil
+    shown = nil
+    span = 0...0
     state = .idle
   }
 
@@ -51,17 +64,16 @@ import SwiftUI
       NSSound.beep()
       return
     }
+    clear()
     source = url
-    frame = nil
-    resultFrame = nil
-    comparing = false
-    rects = []
     state = .loading
     Task {
       do {
         let image = try await VideoDelogo.firstFrame(of: url)
+        let span = try await VideoDelogo.span(of: url)
         guard source == url else { return }
         frame = image
+        self.span = span
         state = .idle
       } catch {
         guard source == url else { return }
@@ -70,9 +82,51 @@ import SwiftUI
     }
   }
 
+  /// 拖进度条、← →：换成 seconds 那一刻的画面（拖到最前面是 firstFrame 那一帧）
+  func seek(to seconds: Double) {
+    guard source != nil, !busy else { return }
+    time = seconds > span.lowerBound ? min(seconds, span.upperBound) : nil
+    guard !seeking else { return }
+    seeking = true
+    Task {
+      await catchUp()
+      seeking = false
+    }
+  }
+
+  /// 一帧一帧取，直到画面是最后要的那一刻；中间拖过的不取。取不出的那一刻（视频中间断了一截）画面不变
+  private func catchUp() async {
+    while let source, time != shown {
+      let wanted = time
+      let image = try? await Self.frame(of: source, at: wanted)
+      // 导出好了：对比的那一帧也换到同一刻
+      var after: CGImage?
+      if case .done(let url) = state {
+        after = try? await Self.frame(of: url, at: wanted)
+      }
+      // 取的时候换了视频：按新的再看
+      guard source == self.source else { continue }
+      shown = wanted
+      if let image { frame = image }
+      if let after { resultFrame = after }
+    }
+  }
+
+  /// time 那一刻的画面，nil 是最前面那一帧
+  private static func frame(of url: URL, at time: Double?) async throws -> CGImage {
+    if let time {
+      try await VideoDelogo.frame(of: url, at: time)
+    } else {
+      try await VideoDelogo.firstFrame(of: url)
+    }
+  }
+
   func export() {
     guard let source, !rects.isEmpty, !busy else { return }
     state = .exporting(0)
+    // 上一次导出的对比图不留：拖进度条时它不再跟着换
+    resultFrame = nil
+    comparing = false
     let rects = rects
     exporting = Task {
       do {
@@ -83,7 +137,7 @@ import SwiftUI
             }
           }
         }
-        resultFrame = try? await VideoDelogo.firstFrame(of: url)
+        resultFrame = try? await Self.frame(of: url, at: time)
         comparing = resultFrame != nil
         state = .done(url)
         NSApp.finished("导出好了「\(url.lastPathComponent)」")
@@ -123,7 +177,7 @@ struct VideoMarkView: View {
         .disabled(model.rects.isEmpty || model.busy || model.comparing)
       Toggle("对比", systemImage: "rectangle.split.2x1", isOn: $model.comparing)
         .toggleStyle(.button)
-        .help("拖中间的线对比原视频和导出的（第一帧）")
+        .help("拖中间的线对比原视频和导出的（同一刻）")
         .disabled(model.resultFrame == nil)
       if case .exporting = model.state {
         Button("停止") { model.stop() }
@@ -141,10 +195,14 @@ struct VideoMarkView: View {
           tool: .video, title: "拖入视频",
           detail: "一次一段；可以框几处，编码跟原视频走，结果另存成「原名-去水印」")
       } else if let frame = model.frame {
-        if model.comparing, let after = model.resultFrame {
-          CompareSlider(before: frame, after: after).padding(20)
-        } else {
-          canvas(frame).padding(20)
+        ZStack(alignment: .bottom) {
+          if model.comparing, let after = model.resultFrame {
+            CompareSlider(before: frame, after: after).padding(20).padding(.bottom, 56)
+          } else {
+            canvas(frame).padding(20).padding(.bottom, 56)
+          }
+          // 只有一帧的视频没什么好拖的
+          if model.span.upperBound > model.span.lowerBound { scrubber.padding(.bottom, 14) }
         }
       } else if case .failed(let reason) = model.state {
         LoadFailed(reason: reason, again: "换一个视频…") { model.clear() }
@@ -155,10 +213,39 @@ struct VideoMarkView: View {
       status
       Spacer(minLength: 8)
       if case .exporting(let fraction) = model.state {
-        ProgressView(value: fraction).frame(width: 120)
-        Text(fraction.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
+        RunningProgress(label: "正在导出", value: fraction) { model.stop() }
       }
     }
+  }
+
+  // MARK: 进度条
+
+  /// 画面下面浮着的一条：拖它换一帧来框（片头黑着、台标还没出来时往后拖），← → 一秒一秒挪
+  private var scrubber: some View {
+    let now = model.time ?? model.span.lowerBound
+    return HStack(spacing: 12) {
+      Button("往前一秒", systemImage: "chevron.backward") { model.seek(to: now - 1) }
+        .keyboardShortcut(.leftArrow, modifiers: [])
+        .help("往前一秒（←）")
+      Slider(value: Binding(get: { now }, set: { model.seek(to: $0) }), in: model.span)
+        .frame(width: 260)
+        .accessibilityLabel("画面位置")
+        .accessibilityValue(VideoPreview.clock(now))
+        .help("拖着换一帧来框台标")
+      Button("往后一秒", systemImage: "chevron.forward") { model.seek(to: now + 1) }
+        .keyboardShortcut(.rightArrow, modifiers: [])
+        .help("往后一秒（→）")
+      Text("\(VideoPreview.clock(now)) / \(VideoPreview.clock(model.span.upperBound))")
+        .monospacedDigit()
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
+    }
+    .labelStyle(.iconOnly)
+    // 同画笔擦除那一条：系统附件栏的按钮，点得到的地方比图标大
+    .buttonStyle(.accessoryBar)
+    .controlSize(.small)
+    .disabled(model.busy)
+    .floatingBar()
   }
 
   // MARK: 画面和框

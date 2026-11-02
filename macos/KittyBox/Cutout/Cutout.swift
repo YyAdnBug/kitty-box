@@ -60,36 +60,41 @@ nonisolated enum Cutout {
     guard let input = CGImageSourceCreateWithURL(source as CFURL, nil),
       let image = ImageConverter.upright(input, at: 0)
     else { throw Failure.unreadable }
-    let subject =
+    var output =
       switch engine {
-      case .model: try await Matting.shared.cutout(image, crop: crop)
+      case .model: apply(try await Matting.shared.mask(for: image), to: image, crop: crop)
       case .system: try lifted(image, crop: crop)
       }
-    var output = CIImage(cgImage: subject)
     if background == .white {
       output = output.composited(over: CIImage(color: .white).cropped(to: output.extent))
     }
+    // 抠、换底合在一起只渲一次（原图大小渲一遍就是一张几百 MB 的中间图）
     guard
-      let result = CIContext().createCGImage(
+      let result = context.createCGImage(
         output, from: output.extent, format: .RGBA8,
         colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
     else { throw Failure.unwritable }
-    let target = source.deletingPathExtension().appendingPathExtension("png").adding("-去背景")
-      .uniqued()
-    guard
-      let destination = CGImageDestinationCreateWithURL(
-        target as CFURL, UTType.png.identifier as CFString, 1, nil)
-    else { throw Failure.unwritable }
-    CGImageDestinationAddImage(destination, result, nil)
-    guard CGImageDestinationFinalize(destination) else {
+    let target = try source.deletingPathExtension().appendingPathExtension("png")
+      .adding("-去背景").reserved()
+    do {
+      guard
+        let destination = CGImageDestinationCreateWithURL(
+          target as CFURL, UTType.png.identifier as CFString, 1, nil)
+      else { throw Failure.unwritable }
+      CGImageDestinationAddImage(destination, result, nil)
+      guard CGImageDestinationFinalize(destination) else { throw Failure.unwritable }
+      return target
+    } catch {
       try? FileManager.default.removeItem(at: target)
-      throw Failure.unwritable
+      throw error
     }
-    return target
   }
 
+  /// 几张一起抠时共用（每张新建一个也要几十毫秒）
+  private static let context = CIContext()
+
   /// 系统的主体识别抠出来（背景透明）；crop：裁到主体的外接框
-  static func lifted(_ image: CGImage, crop: Bool) throws -> CGImage {
+  static func lifted(_ image: CGImage, crop: Bool) throws -> CIImage {
     let handler = VNImageRequestHandler(cgImage: image)
     let request = VNGenerateForegroundInstanceMaskRequest()
     try handler.perform([request])
@@ -98,17 +103,11 @@ nonisolated enum Cutout {
     }
     let buffer = try observation.generateMaskedImage(
       ofInstances: observation.allInstances, from: handler, croppedToInstancesExtent: crop)
-    let masked = CIImage(cvPixelBuffer: buffer)
-    guard
-      let result = CIContext().createCGImage(
-        masked, from: masked.extent, format: .RGBA8,
-        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
-    else { throw Failure.unwritable }
-    return result
+    return CIImage(cvPixelBuffer: buffer)
   }
 
   /// 原图按遮罩（8 位灰度，白 = 留下，可以比原图小）抠出来；crop：裁到遮罩里留下那块的外接框
-  static func apply(_ mask: CGImage, to image: CGImage, crop: Bool) throws -> CGImage {
+  static func apply(_ mask: CGImage, to image: CGImage, crop: Bool) -> CIImage {
     let input = CIImage(cgImage: image)
     let scaled = CIImage(cgImage: mask).transformed(
       by: CGAffineTransform(
@@ -126,11 +125,7 @@ nonisolated enum Cutout {
         height: box.height * sy
       ).integral.intersection(extent)
     }
-    guard
-      let result = CIContext().createCGImage(
-        cut, from: extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
-    else { throw Failure.unwritable }
-    return result
+    return cut.cropped(to: extent)
   }
 }
 
@@ -140,13 +135,10 @@ actor Matting {
   private var model: MLModel?
   private static let side = 1024
 
-  func cutout(_ image: CGImage, crop: Bool) throws -> CGImage {
-    let mask = try mask(for: image)
-    return try Cutout.apply(mask, to: image, crop: crop)
-  }
-
   /// 前景遮罩：1024 见方的 8 位灰度（白 = 前景）；几乎全黑（没有前景）就报没认出主体
   func mask(for image: CGImage) throws -> CGImage {
+    // 一次抠一张，几张在这里排着：整批停下了，排着的不再抠（一张要好几秒），那一行写「已停止」
+    try Task.checkCancellation()
     let input = try MLMultiArray(shape: [1, 3, 1024, 1024], dataType: .float32)
     guard Self.fill(input, with: image) else { throw Cutout.Failure.unreadable }
     let output = try load().prediction(

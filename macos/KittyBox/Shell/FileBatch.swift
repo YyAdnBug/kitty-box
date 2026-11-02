@@ -1,6 +1,7 @@
 // 一批文件交给同一件事处理、结果放在原文件旁边：图片转换（C）、Gemini 角标（D1）、视频转换（M6）共用的列表模型，
 // 和列表的一行（BatchRow）。拖进来的东西里只收这一页能处理的（accepts），别的数一下告诉用户。
-// 几个一起做（lanes），每一个能报进度；用 start 开始的能 stop：取消整批，正在做的那几个写「已停止」，没开始的留着。
+// 几个一起做（lanes），每一个能报进度；用 start 开始的能 stop：取消整批，正在做的那几个写「已停止」（图片的活打断不了，
+// 做完那一张），没开始的留着。跑的时候移除了还没开始的那一行，就不做它。
 
 import AppKit
 import Observation
@@ -62,7 +63,7 @@ import SwiftUI
     items.removeAll { if case .done = $0.state { true } else { false } }
   }
 
-  /// 视频转换选了一段（nil = 不剪了）：做好的那个回到「等着」
+  /// 视频转换选了一段（nil = 不剪了）：做好的那个回到「等待中」
   func setTrim(_ id: Item.ID, _ range: ClosedRange<Double>?) {
     update(id) {
       $0.trim = range
@@ -70,7 +71,7 @@ import SwiftUI
     }
   }
 
-  /// 设置变了：做好的回到「等着」
+  /// 设置变了：做好的回到「等待中」（跑的时候各页把选项锁住，这一批的设置点按钮时就定了）
   func resetDone() {
     for index in items.indices {
       if case .done = items[index].state { items[index].state = .waiting }
@@ -89,10 +90,15 @@ import SwiftUI
   }
 
   /// 不报进度的活：几个一起做，按核数、最多 4 个（RAW、大图解码吃内存）
+  private static let imageLanes = min(ProcessInfo.processInfo.activeProcessorCount, 4)
+
   func run(_ work: @escaping @Sendable (URL) async throws -> URL) async {
-    await run(lanes: min(ProcessInfo.processInfo.activeProcessorCount, 4)) { source, _ in
-      try await work(source)
-    }
+    await run(lanes: Self.imageLanes) { source, _ in try await work(source) }
+  }
+
+  /// 不报进度的活开始一批（图片转换、去背景、AI 水印），之后能 stop
+  func start(_ work: @escaping @Sendable (URL) async throws -> URL) {
+    start(lanes: Self.imageLanes) { source, _ in try await work(source) }
   }
 
   /// 把还没做好的交给 work（它把结果存在旁边、返回结果的位置，一路报进度 0–1），lanes 个一起做
@@ -102,6 +108,26 @@ import SwiftUI
   ) async {
     guard !running else { return }
     running = true
+    await process(lanes: lanes, work)
+  }
+
+  /// 开始一批（之后能 stop）。running 马上记下：连按两下也只开一批，stop 停的就是在跑的这一批
+  func start(
+    lanes: Int,
+    _ work: @escaping @Sendable (URL, @escaping @Sendable (Double) -> Void) async throws -> URL
+  ) {
+    guard !running else { return }
+    running = true
+    runner = Task { await process(lanes: lanes, work) }
+  }
+
+  /// 停下 start 开始的那一批：正在做的取消，没开始的留着
+  func stop() { runner?.cancel() }
+
+  private func process(
+    lanes: Int,
+    _ work: @escaping @Sendable (URL, @escaping @Sendable (Double) -> Void) async throws -> URL
+  ) async {
     defer { running = false }
     var queue = items.filter {
       switch $0.state {
@@ -114,6 +140,8 @@ import SwiftUI
       while true {
         // 补满：最多 lanes 个一起做；整批被停下了就不再开新的
         while inFlight < lanes, !Task.isCancelled, let (id, source) = queue.popFirst() {
+          // 开始以后被移除了：不做（不然列表里没有它，旁边却多出一个文件）
+          guard items.contains(where: { $0.id == id }) else { continue }
           update(id) {
             $0.state = .running
             $0.progress = nil
@@ -141,18 +169,6 @@ import SwiftUI
     }
     NSApp.bounceIfInBackground()
   }
-
-  /// 开始一批（之后能 stop）
-  func start(
-    lanes: Int,
-    _ work: @escaping @Sendable (URL, @escaping @Sendable (Double) -> Void) async throws -> URL
-  ) {
-    guard !running else { return }
-    runner = Task { await run(lanes: lanes, work) }
-  }
-
-  /// 停下 start 开始的那一批：正在做的取消，没开始的留着
-  func stop() { runner?.cancel() }
 
   private func update(_ id: Item.ID, _ change: (inout Item) -> Void) {
     if let index = items.firstIndex(where: { $0.id == id }) { change(&items[index]) }
@@ -188,11 +204,11 @@ struct BatchRow: View {
   @ViewBuilder private var status: some View {
     switch item.state {
     case .waiting:
-      Text("等着").foregroundStyle(.secondary)
+      Text("等待中").foregroundStyle(.secondary)
     case .running:
       HStack(spacing: 6) {
         if let progress = item.progress {
-          ProgressView(value: progress).frame(width: 90)
+          ProgressView(value: progress).frame(width: 100)
           Text(progress.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
             .foregroundStyle(.secondary)
         } else {

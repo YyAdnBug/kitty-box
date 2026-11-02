@@ -1,5 +1,6 @@
 // ImageConverter：10 种格式各转一遍（类型、尺寸对、JPEG 透明处是白的、图标是正方形）；照片的拍摄信息带过去、
-// 旋转方向转正；动图转 GIF 留着每一帧；能读什么；结果的名字；缩到长边上限（只缩不放）、去掉定位只去 GPS。
+// 旋转方向转正；动图转 GIF 留着每一帧（APNG 的帧间隔、循环跟着过去）；能读什么；结果的名字（几张一起转撞了名也各占一个）；
+// 缩到长边上限（只缩不放）、去掉定位只去 GPS；文件夹不能写时报没有权限；去水印的结果 WebP 存成 PNG。
 
 import CoreGraphics
 import Foundation
@@ -150,6 +151,109 @@ struct ImageConverterTests {
     #expect(CGImageSourceCreateWithURL(png as CFURL, nil).map(CGImageSourceGetCount) == 1)
     // 同格式再转一次：不覆盖原图
     #expect(gif.lastPathComponent == "动图 2.gif")
+  }
+
+  /// 动图 PNG（APNG）转 GIF：每帧多久、一直循环跟着过去（WebP、HEIC 序列同理），不然只放一遍、每帧 0.1 秒
+  @Test func animationTimingToGIF() async throws {
+    let box = try Sandbox()
+    let source = box.root.appending(path: "动图.png")
+    let destination = try #require(
+      CGImageDestinationCreateWithURL(source as CFURL, "public.png" as CFString, 3, nil))
+    CGImageDestinationSetProperties(
+      destination,
+      [kCGImagePropertyPNGDictionary: [kCGImagePropertyAPNGLoopCount: 0]] as CFDictionary)
+    for _ in 0..<3 {
+      CGImageDestinationAddImage(
+        destination, picture(40, 40),
+        [kCGImagePropertyPNGDictionary: [kCGImagePropertyAPNGDelayTime: 0.3]] as CFDictionary)
+    }
+    #expect(CGImageDestinationFinalize(destination))
+
+    let gif = try await ImageConverter.convert(source, to: .gif, quality: 1)
+    let result = try #require(CGImageSourceCreateWithURL(gif as CFURL, nil))
+    #expect(CGImageSourceGetCount(result) == 3)
+    let file = CGImageSourceCopyProperties(result, nil) as? [CFString: Any]
+    let loop = (file?[kCGImagePropertyGIFDictionary] as? [CFString: Any])?[
+      kCGImagePropertyGIFLoopCount]
+    #expect(loop as? Int == 0)
+    let frame = CGImageSourceCopyPropertiesAtIndex(result, 1, nil) as? [CFString: Any]
+    let delay = (frame?[kCGImagePropertyGIFDictionary] as? [CFString: Any])?[
+      kCGImagePropertyGIFDelayTime]
+    #expect((delay as? Double).map { abs($0 - 0.3) < 0.01 } == true, "\(String(describing: delay))")
+  }
+
+  /// 几张一起转、名字撞在一起（a.png 和 a.jpg 都转成 a.heic）：各占一个名字，谁也不盖掉谁
+  @Test func sameNameInParallel() async throws {
+    let box = try Sandbox()
+    let root = box.root
+    let types = [
+      "a.png": "public.png", "a.jpg": "public.jpeg", "a.tiff": "public.tiff",
+      "a.bmp": "com.microsoft.bmp",
+    ]
+    for (name, type) in types {
+      write([picture(300, 200)], to: root.appending(path: name), type: type)
+    }
+    let outputs = try await withThrowingTaskGroup(of: URL.self) { group in
+      for name in types.keys {
+        group.addTask {
+          try await ImageConverter.convert(root.appending(path: name), to: .heic, quality: 0.8)
+        }
+      }
+      var outputs: [URL] = []
+      for try await output in group { outputs.append(output) }
+      return outputs
+    }
+    #expect(
+      Set(outputs.map(\.lastPathComponent)) == ["a.heic", "a 2.heic", "a 3.heic", "a 4.heic"])
+    for output in outputs {
+      let result = CGImageSourceCreateWithURL(output as CFURL, nil)
+      #expect(result.flatMap { CGImageSourceGetType($0) } as String? == "public.heic")
+    }
+  }
+
+  /// 文件夹不能写：报系统的「没有权限」，不说「写不出这种格式」，也不留空文件
+  @Test func readOnlyFolder() async throws {
+    let box = try Sandbox()
+    let folder = box.root.appending(path: "只读")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let source = folder.appending(path: "图.png")
+    write([picture(30, 20)], to: source, type: "public.png")
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+    defer {
+      try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+    }
+    let error = await #expect(throws: CocoaError.self) {
+      try await ImageConverter.convert(source, to: .jpeg, quality: 0.8)
+    }
+    #expect(error?.code == .fileWriteNoPermission)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["图.png"])
+  }
+
+  /// 去水印的结果另存：系统写不了的 WebP 存成 PNG（画笔擦除、AI 水印不白做）；写得了的同格式
+  @Test func savesUnwritableAsPNG() throws {
+    let box = try Sandbox()
+    // 1×1 的 WebP（系统写不了 WebP，只能放现成的字节）
+    let webp = try #require(
+      Data(base64Encoded: "UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA=="))
+    let input = try #require(CGImageSourceCreateWithData(webp as CFData, nil))
+    let image = try #require(CGImageSourceCreateImageAtIndex(input, 0, nil))
+
+    let saved = try ImageConverter.save(
+      image, like: input, as: box.root.appending(path: "图-去水印.webp"))
+    #expect(saved.lastPathComponent == "图-去水印.png")
+    let result = try #require(CGImageSourceCreateWithURL(saved as CFURL, nil))
+    #expect(CGImageSourceGetType(result) as String? == "public.png")
+    // 老写法（画笔擦除）也存得下
+    #expect(ImageConverter.save(image, like: input, to: box.root.appending(path: "图-去水印.webp")))
+    #expect(
+      FileManager.default.fileExists(atPath: box.root.appending(path: "图-去水印 2.png").path))
+
+    let png = box.root.appending(path: "原图.png")
+    write([picture(30, 20)], to: png, type: "public.png")
+    let pngInput = try #require(CGImageSourceCreateWithURL(png as CFURL, nil))
+    let same = try ImageConverter.save(
+      picture(30, 20), like: pngInput, as: png.adding("-去水印"))
+    #expect(same.lastPathComponent == "原图-去水印.png")
   }
 
   @Test func readsWhatTheSystemReads() {

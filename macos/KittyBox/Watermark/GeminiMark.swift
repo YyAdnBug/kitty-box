@@ -103,13 +103,28 @@ nonisolated enum GeminiMark {
 
   // MARK: 文件
 
-  /// 去掉角标的图另存在原图旁边：「原名-去水印」、同格式，重名加「 2」；照片信息带过去
+  /// 去掉角标的图另存在原图旁边：「原名-去水印」、同格式（系统写不了的存 PNG），重名加「 2」；照片信息带过去
   @concurrent static func clean(_ source: URL) async throws -> URL {
     guard let input = CGImageSourceCreateWithURL(source as CFURL, nil),
-      let image = CGImageSourceCreateImageAtIndex(input, 0, nil),
-      var pixels = pixels(of: image)
+      let image = ImageConverter.upright(input, at: 0)
     else { throw Failure.unreadable }
-    guard let match = find(in: pixels) else { throw Failure.notFound }
+    guard let result = try removed(from: image) else { throw Failure.notFound }
+    return try save(result, like: input, source: source)
+  }
+
+  /// 认出星标就去掉，返回去掉后的整张图；认不出是 nil。image 是转正了的（星标在看到的右下角；存的时候方向标记是 1）。
+  /// 先只展开右下角够得着所有候选的那一块来找（最多 288 见方）：大多数图不是 Gemini 的，不用为它展开整张像素
+  static func removed(from image: CGImage) throws -> CGImage? {
+    let reach = candidates.map { $0.size + $0.margin }.max() ?? 0
+    let (width, height) = (min(reach, image.width), min(reach, image.height))
+    let (left, top) = (image.width - width, image.height - height)
+    guard let corner = image.cropping(to: CGRect(x: left, y: top, width: width, height: height)),
+      let patch = pixels(of: corner)
+    else { throw Failure.unreadable }
+    guard var match = find(in: patch) else { return nil }
+    match.x += left
+    match.y += top
+    guard var pixels = pixels(of: image) else { throw Failure.unreadable }
     remove(match, from: &pixels)
 
     let colorSpace = colorSpace(of: image)
@@ -121,9 +136,16 @@ nonisolated enum GeminiMark {
           bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?.makeImage()
       })
     else { throw Failure.unwritable }
-    let target = source.adding("-去水印").uniqued()
-    guard ImageConverter.save(result, like: input, to: target) else { throw Failure.unwritable }
-    return target
+    return result
+  }
+
+  /// 存成「原名-去水印」（AI 水印也用）：写不出来时说「存不下去」，文件夹没权限这类照系统的说法
+  static func save(_ image: CGImage, like input: CGImageSource, source: URL) throws -> URL {
+    do {
+      return try ImageConverter.save(image, like: input, as: source.adding("-去水印"))
+    } catch ImageConverter.Failure.unwritable {
+      throw Failure.unwritable
+    }
   }
 
   /// 按图本身的色彩空间展开成 RGBA，不做色彩转换（换了空间，反解的数就不对了）

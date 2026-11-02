@@ -70,9 +70,9 @@ nonisolated enum ImageConverter {
   private static let readable = (CGImageSourceCopyTypeIdentifiers() as? [String] ?? [])
     .compactMap { UTType($0) }
 
-  /// 原图旁边、换扩展名，重名加「 2」
-  static func output(for source: URL, format: Format) -> URL {
-    source.deletingPathExtension().appendingPathExtension(format.fileExtension).uniqued()
+  /// 原图旁边、换扩展名，重名加「 2」；挑中就占住（几张一起转时 a.png、a.jpg 都转成 a.heic 也不会互相盖掉）
+  static func output(for source: URL, format: Format) throws -> URL {
+    try source.deletingPathExtension().appendingPathExtension(format.fileExtension).reserved()
   }
 
   /// maxSide：长边超过它就等比缩到它（只缩不放；图标格式不管它）；stripLocation：去掉 GPS 定位，别的照片信息照样带
@@ -84,47 +84,83 @@ nonisolated enum ImageConverter {
       CGImageSourceGetCount(input) > 0
     else { throw Failure.unreadable }
     let frames = format.keepsFrames ? CGImageSourceGetCount(input) : 1
-    let target = output(for: source, format: format)
-    guard
-      let destination = CGImageDestinationCreateWithURL(
-        target as CFURL, format.typeIdentifier as CFString, format.iconSizes?.count ?? frames, nil)
-    else { throw Failure.unwritable }
+    let target = try output(for: source, format: format)
+    do {
+      guard
+        let destination = CGImageDestinationCreateWithURL(
+          target as CFURL, format.typeIdentifier as CFString, format.iconSizes?.count ?? frames,
+          nil)
+      else { throw Failure.unwritable }
 
-    if let sizes = format.iconSizes {
-      guard let image = upright(input, at: 0) else { throw Failure.unreadable }
-      for side in sizes { CGImageDestinationAddImage(destination, square(image, side: side), nil) }
-    } else {
-      // 整个文件的属性（比如动图循环几次）
-      if let properties = CGImageSourceCopyProperties(input, nil) {
-        CGImageDestinationSetProperties(destination, properties)
-      }
-      for index in 0..<frames {
-        guard let image = upright(input, at: index, maxSide: maxSide) else {
+      if let sizes = format.iconSizes {
+        // 图标最大 1024：不用按原图整张解
+        guard let image = upright(input, at: 0, maxSide: sizes.max()) else {
           throw Failure.unreadable
         }
-        var properties =
-          CGImageSourceCopyPropertiesAtIndex(input, index, nil) as? [CFString: Any] ?? [:]
-        properties[kCGImagePropertyOrientation] = 1
-        if stripLocation { properties[kCGImagePropertyGPSDictionary] = nil }
-        // 缩过的话 EXIF 里记的像素尺寸跟着改
-        if var exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] {
-          exif[kCGImagePropertyExifPixelXDimension] = image.width
-          exif[kCGImagePropertyExifPixelYDimension] = image.height
-          properties[kCGImagePropertyExifDictionary] = exif
+        for side in sizes {
+          CGImageDestinationAddImage(destination, square(image, side: side), nil)
         }
-        if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
-          tiff[kCGImagePropertyTIFFOrientation] = 1
-          properties[kCGImagePropertyTIFFDictionary] = tiff
+      } else {
+        // 整个文件的属性（比如动图循环几次）
+        if var properties = CGImageSourceCopyProperties(input, nil) as? [CFString: Any] {
+          if format == .gif, properties[kCGImagePropertyGIFDictionary] == nil {
+            properties[kCGImagePropertyGIFDictionary] = gifTiming(from: properties, frame: false)
+          }
+          CGImageDestinationSetProperties(destination, properties as CFDictionary)
         }
-        if format.hasQuality { properties[kCGImageDestinationLossyCompressionQuality] = quality }
-        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        for index in 0..<frames {
+          guard let image = upright(input, at: index, maxSide: maxSide) else {
+            throw Failure.unreadable
+          }
+          var properties =
+            CGImageSourceCopyPropertiesAtIndex(input, index, nil) as? [CFString: Any] ?? [:]
+          properties[kCGImagePropertyOrientation] = 1
+          if stripLocation { properties[kCGImagePropertyGPSDictionary] = nil }
+          // 缩过的话 EXIF 里记的像素尺寸跟着改
+          if var exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            exif[kCGImagePropertyExifPixelXDimension] = image.width
+            exif[kCGImagePropertyExifPixelYDimension] = image.height
+            properties[kCGImagePropertyExifDictionary] = exif
+          }
+          if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            tiff[kCGImagePropertyTIFFOrientation] = 1
+            properties[kCGImagePropertyTIFFDictionary] = tiff
+          }
+          if format == .gif, properties[kCGImagePropertyGIFDictionary] == nil {
+            properties[kCGImagePropertyGIFDictionary] = gifTiming(from: properties, frame: true)
+          }
+          if format.hasQuality { properties[kCGImageDestinationLossyCompressionQuality] = quality }
+          CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        }
       }
-    }
-    guard CGImageDestinationFinalize(destination) else {
+      guard CGImageDestinationFinalize(destination) else { throw Failure.unwritable }
+      return target
+    } catch {
+      // 占住的空文件（或写了一半的）删掉：这个名字是这一次占的，不是别人的
       try? FileManager.default.removeItem(at: target)
-      throw Failure.unwritable
+      throw error
     }
-    return target
+  }
+
+  /// 别的动图格式（WebP、APNG、HEIC 序列）的帧间隔、循环次数放在各自的组里：转 GIF 时换成 GIF 的键，
+  /// 不然转出来的 GIF 只放一遍、每帧都按 0.1 秒。frame：一帧的属性（帧间隔）；否则是整个文件的（循环次数）
+  private static func gifTiming(from properties: [CFString: Any], frame: Bool) -> [CFString: Any]? {
+    let groups = [
+      (
+        kCGImagePropertyWebPDictionary, kCGImagePropertyWebPDelayTime, kCGImagePropertyWebPLoopCount
+      ),
+      (kCGImagePropertyPNGDictionary, kCGImagePropertyAPNGDelayTime, kCGImagePropertyAPNGLoopCount),
+      (
+        kCGImagePropertyHEICSDictionary, kCGImagePropertyHEICSDelayTime,
+        kCGImagePropertyHEICSLoopCount
+      ),
+    ]
+    for (group, delay, loop) in groups {
+      guard let info = properties[group] as? [CFString: Any], let value = info[frame ? delay : loop]
+      else { continue }
+      return [frame ? kCGImagePropertyGIFDelayTime : kCGImagePropertyGIFLoopCount: value]
+    }
+    return nil
   }
 
   /// 按「旋转方向」转正的整张图（RAW 也在这里显影）；画笔擦除也用它读图。maxSide：长边最多这么长（只缩不放）
@@ -141,26 +177,47 @@ nonisolated enum ImageConverter {
     return CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary)
   }
 
-  /// 去水印的结果另存：和原图同格式、带上原图的照片信息（方向标记改成 1：存的是已经转正的像素），有损格式质量 0.95。
-  /// Gemini 角标和画笔擦除共用；写不出来时不留半截文件
-  static func save(_ image: CGImage, like source: CGImageSource, to target: URL) -> Bool {
-    guard let type = CGImageSourceGetType(source),
-      let destination = CGImageDestinationCreateWithURL(target as CFURL, type, 1, nil)
-    else { return false }
-    var properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
-    properties[kCGImagePropertyOrientation] = 1
-    if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
-      tiff[kCGImagePropertyTIFFOrientation] = 1
-      properties[kCGImagePropertyTIFFDictionary] = tiff
+  /// 去水印的结果另存在 wanted（「原名-去水印.原扩展名」），重名加「 2」、挑中就占住：和原图同格式、带上原图的照片信息
+  /// （方向标记改成 1：存的是已经转正的像素），有损格式质量 0.95。系统写不了原图的格式（WebP、RAW、JPEG XL…）时
+  /// 存成 PNG（不丢画质、留得住透明），不白做。AI 水印和画笔擦除共用；返回真正存在哪；写不出来时不留半截文件
+  static func save(_ image: CGImage, like source: CGImageSource, as wanted: URL) throws -> URL {
+    var type = (CGImageSourceGetType(source) as String?) ?? UTType.png.identifier
+    var wanted = wanted
+    if !writable.contains(type) {
+      type = UTType.png.identifier
+      wanted = wanted.deletingPathExtension().appendingPathExtension("png")
     }
-    properties[kCGImageDestinationLossyCompressionQuality] = 0.95
-    CGImageDestinationAddImage(destination, image, properties as CFDictionary)
-    guard CGImageDestinationFinalize(destination) else {
+    let target = try wanted.reserved()
+    do {
+      guard
+        let destination = CGImageDestinationCreateWithURL(
+          target as CFURL, type as CFString, 1, nil)
+      else { throw Failure.unwritable }
+      var properties =
+        CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
+      properties[kCGImagePropertyOrientation] = 1
+      if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+        tiff[kCGImagePropertyTIFFOrientation] = 1
+        properties[kCGImagePropertyTIFFDictionary] = tiff
+      }
+      properties[kCGImageDestinationLossyCompressionQuality] = 0.95
+      CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+      guard CGImageDestinationFinalize(destination) else { throw Failure.unwritable }
+      return target
+    } catch {
       try? FileManager.default.removeItem(at: target)
-      return false
+      throw error
     }
-    return true
   }
+
+  /// 画笔擦除还在用的老写法：target 是挑好的名字，存成了就是 true。WebP、RAW 存成了旁边的 PNG 也算存成
+  /// （活儿不白做），这时真正的名字只有上面那个 save(_:like:as:) 报得出来
+  static func save(_ image: CGImage, like source: CGImageSource, to target: URL) -> Bool {
+    (try? save(image, like: source, as: target)) != nil
+  }
+
+  /// 系统能写的格式（读得了的比这多：WebP、RAW、JPEG XL 只能读）
+  private static let writable = Set(CGImageDestinationCopyTypeIdentifiers() as? [String] ?? [])
 
   /// 等比放进透明的正方形画布（图标格式用）
   private static func square(_ image: CGImage, side: Int) -> CGImage {

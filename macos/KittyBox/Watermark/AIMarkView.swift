@@ -1,7 +1,7 @@
 // AI 水印页（M7，原来的「Gemini 角标」页）：一批图（BatchPreview：缩略图网格，点一张看大图），页头「去掉水印」一张一张去
 // （AIMark：Gemini 星标按原理还原，「AI生成」这类文字水印找到位置交给补图模型补）；去好了大图是前后对比（拖中间的线，能放大）。
 // 认不出的那格写「没认出 AI 水印」，右键或格里的链接能改用画笔擦除（交给 Navigator 切过去）。补图模型没下好时顶上一条。
-// 结果是「原名-去水印」放在原图旁边，不碰原图。
+// 结果是「原名-去水印」放在原图旁边，不碰原图。去的时候「也去掉这些字」锁住，页头换成「停止」。
 
 import AppKit
 import SwiftUI
@@ -14,6 +14,8 @@ struct AIMarkView: View {
   @Bindable private var downloads = ModelDownloads.shared
   /// 也去掉这些字（用户自己加的，逗号隔开）
   @AppStorage(Prefs.aiMarkWords) private var extra = ""
+  /// 正在「也去掉这些字」里打字：回车、← → Esc 留给输入框，不去点页头的按钮、不换大图
+  @FocusState private var typing: Bool
 
   var body: some View {
     ToolPage(tool: .aiMark) {
@@ -22,13 +24,19 @@ struct AIMarkView: View {
       Button("清掉做完的", systemImage: "checklist.checked") { batch.clearFinished() }
         .help("清掉去好的")
         .disabled(batch.outputs.isEmpty || batch.running)
-      Button("去掉水印") {
-        let (choice, words) = (choice, AIMark.words(extra))
-        Task { await batch.run { try await AIMark.clean($0, using: choice, words: words) } }
+      if batch.running {
+        Button("停止") { batch.stop() }
+          .buttonStyle(BrandButtonStyle())
+          .help("正在去的几张去完就停，没开始的留着")
+      } else {
+        Button("去掉水印") {
+          let (choice, words) = (choice, AIMark.words(extra))
+          batch.start { try await AIMark.clean($0, using: choice, words: words) }
+        }
+        .buttonStyle(BrandButtonStyle())
+        .keyboardShortcut(typing ? nil : .defaultAction)
+        .disabled(!batch.hasWork)
       }
-      .buttonStyle(BrandButtonStyle())
-      .keyboardShortcut(.defaultAction)
-      .disabled(!batch.hasWork || batch.running)
     } content: {
       VStack(spacing: 0) {
         if downloads.state(of: choice) != .ready {
@@ -41,7 +49,7 @@ struct AIMarkView: View {
             tool: .aiMark, title: "拖入 AI 生成的图",
             detail: "Gemini 的星标按原理还原，不靠猜；豆包、即梦这类角上的「AI生成」字样自动补掉。结果另存成「原名-去水印」")
         } else {
-          BatchPreview(batch: batch, doneVerb: "存成", handOff: handOff)
+          BatchPreview(batch: batch, doneVerb: "存成", handOff: handOff, typing: typing)
         }
       }
     } options: {
@@ -52,7 +60,10 @@ struct AIMarkView: View {
         TextField("比如：样张, @我的名字", text: $extra, axis: .vertical)
           .lineLimit(2...4)
           .textFieldStyle(.roundedBorder)
+          .focused($typing)
       }
+      // 去的时候锁住：这一批按点按钮时填的字去
+      .disabled(batch.running)
       OptionGroup(title: "会去掉什么") {
         Text("Gemini 的星标按原理还原；贴在上下边的「AI生成」「Made with AI」这类字样，和上面填的字，用补图模型补掉。")
           .font(.callout).foregroundStyle(.secondary)
@@ -63,7 +74,7 @@ struct AIMarkView: View {
       Spacer(minLength: 8)
       if batch.running {
         ProgressView().controlSize(.mini)
-        Text("正在去…")
+        Text("正在去水印…")
       } else {
         Text("认不出的可以右键改用画笔擦除")
       }

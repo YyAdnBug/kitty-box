@@ -1,5 +1,6 @@
 // 文件在列表 / 表格里显示的几样：小图（图片用 ImageIO 出缩略图、按方向转正，视频取第一帧，别的用访达的图标）、种类、大小、图片的像素尺寸、
-// 处理前后大小差多少。每一格自己在后台读（只读文件头和属性，很快），不另建缓存。去水印的预览和对比图也用 Thumbnail.load。
+// 处理前后大小差多少。每一格自己在后台读（大小、种类、尺寸只读文件头；小图先用文件自带的缩略图），不另建缓存。
+// 去水印的预览和对比图也用 Thumbnail.load。
 
 import AVFoundation
 import AppKit
@@ -9,13 +10,42 @@ import SwiftUI
 enum Thumbnail {
   /// 长边不超过 maxPixel 的图，按方向转正；读不了是 nil
   @concurrent nonisolated static func load(_ url: URL, maxPixel: Int) async -> CGImage? {
-    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    // 行已经滚出去了（任务取消了）：还没开始解的就不解了（ImageIO 解到一半打断不了）
+    guard !Task.isCancelled, let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+      return nil
+    }
+    // 表格里的小图先用文件自带的缩略图（相机的 JPEG、iPhone 的 HEIC、RAW 都带）：不用整张解，36 MP 的 HEIC
+    // 实测 141 ms → 9 ms；没带的照样从整张出。有的相机自带的是 4:3 带黑边的，和原图比例对不上就还是整张解
+    if maxPixel <= 160, let small = thumbnail(source, maxPixel, always: false),
+      sameShape(small, source)
+    {
+      return small
+    }
+    return thumbnail(source, maxPixel, always: true)
+  }
+
+  nonisolated private static func thumbnail(_ source: CGImageSource, _ maxPixel: Int, always: Bool)
+    -> CGImage?
+  {
     let options: [CFString: Any] = [
-      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      always
+        ? kCGImageSourceCreateThumbnailFromImageAlways
+        : kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
       kCGImageSourceCreateThumbnailWithTransform: true,
       kCGImageSourceThumbnailMaxPixelSize: maxPixel,
     ]
     return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+  }
+
+  /// 缩略图和原图（转正后）宽高比差不到 3%
+  nonisolated private static func sameShape(_ image: CGImage, _ source: CGImageSource) -> Bool {
+    guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+      var width = properties[kCGImagePropertyPixelWidth] as? Double,
+      var height = properties[kCGImagePropertyPixelHeight] as? Double, width > 0, height > 0
+    else { return false }
+    if properties[kCGImagePropertyOrientation] as? Int ?? 1 >= 5 { swap(&width, &height) }
+    let shape = Double(image.width) / Double(image.height)
+    return abs(shape / (width / height) - 1) < 0.03
   }
 }
 

@@ -1,5 +1,5 @@
 // FileBatch：一批一起做——全做完、各自的结果和失败对得上，同时在做的不超过 4 张、也确实不止一张；
-// 一个一个做时停下：正在做的那个「已停止」，没开始的留着；只收 accepts 认的文件。
+// 一个一个做时停下：正在做的那个「已停止」，没开始的留着；只收 accepts 认的文件；跑的时候移除的不做、连按两下只开一批。
 
 import Foundation
 import Testing
@@ -45,11 +45,15 @@ struct FileBatchTests {
     #expect(batch.items.count == 3)
     #expect(batch.skipped == 1)
     // 一个要做一分钟的活：停下之前不可能做完（别的测试同时在主线程上跑重活，按时间等不靠谱）
-    batch.start(lanes: 1) { source, progress in
+    let work: @Sendable (URL, @escaping @Sendable (Double) -> Void) async throws -> URL = {
+      source, progress in
       progress(0.5)
       try await Task.sleep(for: .seconds(60))
       return source
     }
+    // 连按两下：只开一批，停止停的就是它
+    batch.start(lanes: 1, work)
+    batch.start(lanes: 1, work)
     for _ in 0..<500 {
       if case .running = batch.items[0].state { break }
       try await Task.sleep(for: .milliseconds(10))
@@ -64,6 +68,39 @@ struct FileBatchTests {
       Issue.record("\(states[0])")
     }
     #expect(states.dropFirst().allSatisfy { if case .waiting = $0 { true } else { false } })
+  }
+
+  /// 放行之前一直等着的活：记下做了哪几个
+  private actor Gate {
+    var names: [String] = []
+    var open = false
+    func enter(_ name: String) { names.append(name) }
+    func release() { open = true }
+  }
+
+  /// 跑的时候移除了还没开始的那一行：不做它；连按两下「开始」只开一批（停止停得住见 stopsTheBatch）
+  @Test func skipsRemovedRowsAndStartsOnce() async throws {
+    let batch = FileBatch(accepts: { _ in true })
+    batch.add((1...3).map { URL(filePath: "/tmp/kittybox-batch/\($0).mov") })
+    let gate = Gate()
+    let work: @Sendable (URL, @escaping @Sendable (Double) -> Void) async throws -> URL = {
+      source, _ in
+      await gate.enter(source.lastPathComponent)
+      while await !gate.open { try await Task.sleep(for: .milliseconds(10)) }
+      return source
+    }
+    batch.start(lanes: 1, work)
+    batch.start(lanes: 1, work)
+    #expect(batch.running)
+    for _ in 0..<500 {
+      if case .running = batch.items[0].state { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    batch.remove([batch.items[1].id])
+    await gate.release()
+    for _ in 0..<3000 where batch.running { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(await gate.names == ["1.mov", "3.mov"])
+    #expect(batch.outputs.count == 2)
   }
 
   @Test func trimResetsDone() {

@@ -1,7 +1,8 @@
 // 图片转换页（C1–C3、M5）：拖进（⌘V 粘贴、⌘O 添加）图片 → 右边选项栏选转成什么（有损的再调质量）、要不要缩小、
 // 去不去定位 → 页头「转成 X」，几张一起转，结果放在原图旁边。上半是选中那张的预览，转好了是前后对比（M8，能放大看画质）；
 // 下半表格列尺寸、大小、转换后的大小和差多少（照常见压图工具）；右键打开 / 在访达中显示 / 移除。
-// 换了格式、质量、尺寸、定位，转好的那些回到「等待中」，再点一次按新的设置转（旧结果留在原处，新的重名加「 2」）。
+// 换了格式、质量、尺寸、定位，转好的那些回到「等待中」，再点一次按新的设置转（旧结果留在原处，新的重名加「 2」）；
+// 转的时候右边的选项锁住，页头换成「停止」。
 
 import AppKit
 import SwiftUI
@@ -22,19 +23,23 @@ struct ConvertView: View {
       Button("清掉做完的", systemImage: "checklist.checked") { model.clearFinished() }
         .help("清掉转好的")
         .disabled(model.outputs.isEmpty || model.running)
-      Button("转成 \(format.title)") {
-        let (format, quality, stripLocation) = (format, quality, stripLocation)
-        let maxSide = maxSide > 0 ? maxSide : nil
-        Task {
-          await model.run {
+      if model.running {
+        Button("停止") { model.stop() }
+          .buttonStyle(BrandButtonStyle())
+          .help("正在转的几张转完就停，没开始的留着")
+      } else {
+        Button("转成 \(format.title)") {
+          let (format, quality, stripLocation) = (format, quality, stripLocation)
+          let maxSide = maxSide > 0 ? maxSide : nil
+          model.start {
             try await ImageConverter.convert(
               $0, to: format, quality: quality, maxSide: maxSide, stripLocation: stripLocation)
           }
         }
+        .buttonStyle(BrandButtonStyle())
+        .keyboardShortcut(.defaultAction)
+        .disabled(!model.hasWork)
       }
-      .buttonStyle(BrandButtonStyle())
-      .keyboardShortcut(.defaultAction)
-      .disabled(!model.hasWork || model.running)
     } content: {
       if model.items.isEmpty {
         DropZone(
@@ -52,7 +57,8 @@ struct ConvertView: View {
         }
       }
     } options: {
-      optionGroups
+      // 跑的时候锁住：这一批按点按钮时的设置转，中途改了会转出和页头对不上的结果
+      optionGroups.disabled(model.running)
     } status: {
       Text(summary)
       Spacer(minLength: 8)
@@ -87,7 +93,7 @@ struct ConvertView: View {
         .width(min: 54, ideal: 64)
       TableColumn("转换后") { item in
         switch item.state {
-        case .waiting: Text("等待中").foregroundStyle(.tertiary)
+        case .waiting: Text("等待中").foregroundStyle(.secondary)
         case .running:
           HStack(spacing: 6) {
             ProgressView().controlSize(.mini)

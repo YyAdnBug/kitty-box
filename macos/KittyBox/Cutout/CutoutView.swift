@@ -1,6 +1,7 @@
 // 去背景页（M7；M9 加「精细」抠法和网格预览）：拖进（⌘V 粘贴、⌘O 添加）一批图 → 右边选项栏选怎么抠（精细 = 下载的模型、
 // 系统 = 主体识别）、背景（透明 / 白色）、要不要裁到主体 → 页头「去背景」，几张一起做（Cutout）。图是缩略图网格，
 // 点一张看大图（BatchPreview），做好了是前后对比（透明处垫棋盘格）。选了精细、模型还没下时顶上一条下载。
+// 做的时候右边的选项锁住，页头换成「停止」。
 // 结果是 PNG「原名-去背景.png」放在原图旁边，原图不动。
 
 import SwiftUI
@@ -19,17 +20,21 @@ struct CutoutView: View {
       Button("清掉做完的", systemImage: "checklist.checked") { batch.clearFinished() }
         .help("清掉做好的")
         .disabled(batch.outputs.isEmpty || batch.running)
-      Button("去背景") {
-        let (background, crop, engine) = (background, crop, engine)
-        Task {
-          await batch.run {
+      if batch.running {
+        Button("停止") { batch.stop() }
+          .buttonStyle(BrandButtonStyle())
+          .help("正在抠的几张抠完就停，没开始的留着")
+      } else {
+        Button("去背景") {
+          let (background, crop, engine) = (background, crop, engine)
+          batch.start {
             try await Cutout.remove($0, background: background, crop: crop, engine: engine)
           }
         }
+        .buttonStyle(BrandButtonStyle())
+        .keyboardShortcut(.defaultAction)
+        .disabled(!batch.hasWork || needsModel)
       }
-      .buttonStyle(BrandButtonStyle())
-      .keyboardShortcut(.defaultAction)
-      .disabled(!batch.hasWork || batch.running || needsModel)
     } content: {
       VStack(spacing: 0) {
         if needsModel {
@@ -48,34 +53,39 @@ struct CutoutView: View {
         }
       }
     } options: {
-      OptionGroup(title: "怎么抠", footnote: Text(engineNote)) {
-        Picker("怎么抠", selection: $engine) {
-          ForEach(Cutout.Engine.allCases, id: \.self) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-      }
-      OptionGroup(title: "背景", footnote: Text("透明的存成 PNG，放进文档、海报里不带底；白色的适合证件照、商品图。")) {
-        Picker("背景", selection: $background) {
-          ForEach(Cutout.Background.allCases, id: \.self) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-      }
-      OptionGroup(title: "大小", footnote: Text("打开后结果只留主体那一块，不保留原图的四边。")) {
-        Toggle("裁到主体的边上", isOn: $crop)
-      }
+      // 跑的时候锁住：这一批按点按钮时的设置抠
+      optionGroups.disabled(batch.running)
     } status: {
       Text(summary)
       Spacer(minLength: 8)
       if batch.running {
         ProgressView().controlSize(.mini)
-        Text("正在抠…")
+        Text("正在去背景…")
       }
     }
     .onChange(of: background) { batch.resetDone() }
     .onChange(of: crop) { batch.resetDone() }
     .onChange(of: engine) { batch.resetDone() }
+  }
+
+  @ViewBuilder private var optionGroups: some View {
+    OptionGroup(title: "怎么抠", footnote: Text(engineNote)) {
+      Picker("怎么抠", selection: $engine) {
+        ForEach(Cutout.Engine.allCases, id: \.self) { Text($0.title).tag($0) }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+    }
+    OptionGroup(title: "背景", footnote: Text("透明的存成 PNG，放进文档、海报里不带底；白色的适合证件照、商品图。")) {
+      Picker("背景", selection: $background) {
+        ForEach(Cutout.Background.allCases, id: \.self) { Text($0.title).tag($0) }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+    }
+    OptionGroup(title: "大小", footnote: Text("打开后结果只留主体那一块，不保留原图的四边。")) {
+      Toggle("裁到主体的边上", isOn: $crop)
+    }
   }
 
   /// 选了精细、模型还没下好

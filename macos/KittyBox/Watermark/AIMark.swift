@@ -18,14 +18,12 @@ nonisolated enum AIMark {
     case unreadable
     case notFound
     case needsModel(AIModel)
-    case unwritable
 
     var errorDescription: String? {
       switch self {
       case .unreadable: "读不出这张图。"
       case .notFound: "没认出 AI 水印。"
       case .needsModel(let model): "找到了文字水印，要先下载补图模型「\(model.title)」。"
-      case .unwritable: "存不下去水印的结果。"
       }
     }
   }
@@ -56,25 +54,24 @@ nonisolated enum AIMark {
   @concurrent static func clean(_ source: URL, using model: AIModel, words: [String] = [])
     async throws -> URL
   {
-    do {
-      return try await GeminiMark.clean(source)
-    } catch GeminiMark.Failure.notFound {
-      // 不是 Gemini 的星标：接着找文字水印
-    }
+    // 只解一次：先认 Gemini 的星标，不是的话接着找文字水印
     guard let input = CGImageSourceCreateWithURL(source as CFURL, nil),
       var image = ImageConverter.upright(input, at: 0)
     else { throw Failure.unreadable }
+    if let cleaned = try GeminiMark.removed(from: image) {
+      return try GeminiMark.save(cleaned, like: input, source: source)
+    }
     let boxes = try locate(in: image, words: words)
     guard !boxes.isEmpty else { throw Failure.notFound }
     guard model.isInstalled else { throw Failure.needsModel(model) }
     // 一块一块补：几块分在不同角上时一起补，裁出来的就是整张图，缩到模型边长会糊
     for box in boxes {
+      // 整批停下了：还没补的不补了
+      try Task.checkCancellation()
       image = try await Inpainter.shared.erase(
         image, mask: mask([box], width: image.width, height: image.height), using: model)
     }
-    let target = source.adding("-去水印").uniqued()
-    guard ImageConverter.save(image, like: input, to: target) else { throw Failure.unwritable }
-    return target
+    return try GeminiMark.save(image, like: input, source: source)
   }
 
   /// 图里要去掉的字在哪：左上为原点的像素框，已经往外扩过一圈。AI 水印的词只看上下各 30% 的边（水印都贴边），

@@ -64,7 +64,7 @@ nonisolated enum Cutout {
       let image = ImageConverter.upright(input, at: 0)
     else { throw Failure.unreadable }
     // ponytail: 整张图认一遍字，节目单海报（1672×2508）上的小字都认得出；特别大的长图上的小字可能漏，到时再分块认
-    let lines = keepText ? try AIMark.lines(in: image).map(\.rect) : []
+    let lines = try await keepText ? AIMark.lines(in: image).map(\.rect) : []
     try Task.checkCancellation()
     var subject = true
     var output: CIImage
@@ -72,7 +72,7 @@ nonisolated enum Cutout {
       output =
         switch engine {
         case .model: apply(try await Matting.shared.mask(for: image), to: image)
-        case .system: try lifted(image)
+        case .system: try await lifted(image)
         }
     } catch Failure.noSubject where !lines.isEmpty {
       // 海报、截图常常认不出主体：只留字
@@ -117,17 +117,19 @@ nonisolated enum Cutout {
   /// 几张一起抠时共用（每张新建一个也要几十毫秒）
   private static let context = CIContext()
 
-  /// 系统的主体识别抠出来（背景透明，和原图一样大）
-  static func lifted(_ image: CGImage) throws -> CIImage {
-    let handler = VNImageRequestHandler(cgImage: image)
-    let request = VNGenerateForegroundInstanceMaskRequest()
-    try handler.perform([request])
-    guard let observation = request.results?.first, !observation.allInstances.isEmpty else {
-      throw Failure.noSubject
+  /// 系统的主体识别抠出来（背景透明，和原图一样大）；在 GCD 上跑（offPool，同 AIMark.lines）
+  static func lifted(_ image: CGImage) async throws -> CIImage {
+    try await offPool {
+      let handler = VNImageRequestHandler(cgImage: image)
+      let request = VNGenerateForegroundInstanceMaskRequest()
+      try handler.perform([request])
+      guard let observation = request.results?.first, !observation.allInstances.isEmpty else {
+        throw Failure.noSubject
+      }
+      let buffer = try observation.generateMaskedImage(
+        ofInstances: observation.allInstances, from: handler, croppedToInstancesExtent: false)
+      return CIImage(cvPixelBuffer: buffer)
     }
-    let buffer = try observation.generateMaskedImage(
-      ofInstances: observation.allInstances, from: handler, croppedToInstancesExtent: false)
-    return CIImage(cvPixelBuffer: buffer)
   }
 
   /// 原图按遮罩（8 位灰度，白 = 留下，可以比原图小）抠出来，和原图一样大

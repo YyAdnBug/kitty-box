@@ -43,13 +43,13 @@ struct AIMarkTests {
     #expect(!AIMark.isWatermark("2026 年 10 月 30 日"))
   }
 
-  @Test func findsTextWatermark() throws {
-    let boxes = try AIMark.locate(in: picture(label: "豆包AI生成"))
+  @Test func findsTextWatermark() async throws {
+    let boxes = try await AIMark.locate(in: picture(label: "豆包AI生成"))
     #expect(boxes.count == 1)
     // 字的墨迹（CTLineGetImageBounds 量的）在左上原点下 x 951–1118、y 736–767；框要把它整个盖住、四周再留 2 像素
     let text = CGRect(x: 949, y: 734, width: 171, height: 35)
     #expect(boxes.first.map { $0.contains(text) } == true, "\(boxes)")
-    #expect(try AIMark.locate(in: picture(label: nil)).isEmpty)
+    #expect(try await AIMark.locate(in: picture(label: nil)).isEmpty)
   }
 
   /// 大图角上又小又半透明的水印（2026-11-02 用户的海报，整张认不出）：1672×2508、水面一样的亮暗横纹，右下角半透明白字带灰边。
@@ -59,7 +59,7 @@ struct AIMarkTests {
     (30.0, 0.7, CGRect(x: 1389, y: 2448, width: 153, height: 31)),
     (22.0, 0.55, CGRect(x: 1388, y: 2456, width: 114, height: 24)),
   ])
-  func findsFaintCornerWatermark(size: CGFloat, alpha: CGFloat, ink: CGRect) throws {
+  func findsFaintCornerWatermark(size: CGFloat, alpha: CGFloat, ink: CGRect) async throws {
     let (width, height) = (1672, 2508)
     let context = CGContext(
       data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -91,7 +91,7 @@ struct AIMarkTests {
         .strokeColor: NSColor(white: 0.45, alpha: 0.5), .strokeWidth: -2.0,
       ])
     NSGraphicsContext.restoreGraphicsState()
-    let boxes = try AIMark.locate(in: context.makeImage()!)
+    let boxes = try await AIMark.locate(in: context.makeImage()!)
     #expect(boxes.count == 1, "\(boxes)")
     #expect(boxes.first.map { $0.contains(ink) } == true, "\(boxes)")
   }
@@ -104,11 +104,11 @@ struct AIMarkTests {
   }
 
   /// 用户加的词：分隔符认中英文逗号、顿号、换行，空格留在词里；整张图里找（字在正中间），不加就不认
-  @Test func findsUserWords() throws {
+  @Test func findsUserWords() async throws {
     #expect(AIMark.words(" 样张，@Some One、Made with AI\n,") == ["样张", "@someone", "madewithai"])
     let image = picture(label: "样张 仅供参考", at: NSPoint(x: 450, y: 380))
-    #expect(try AIMark.locate(in: image).isEmpty)
-    let boxes = try AIMark.locate(in: image, words: AIMark.words("样张"))
+    #expect(try await AIMark.locate(in: image).isEmpty)
+    let boxes = try await AIMark.locate(in: image, words: AIMark.words("样张"))
     #expect(boxes.count == 1)
     // 字在左上原点下大约 y 380–425、x 450 起
     #expect(boxes.first.map { $0.contains(CGRect(x: 455, y: 382, width: 150, height: 36)) } == true)
@@ -146,7 +146,7 @@ struct AIMarkTests {
       CGImageSourceCreateWithURL(output as CFURL, nil).flatMap {
         CGImageSourceCreateImageAtIndex($0, 0, nil)
       })
-    #expect(try AIMark.locate(in: result).isEmpty)
+    #expect(try await AIMark.locate(in: result).isEmpty)
 
     let clean = root.appending(path: "干净.png")
     let plain = try #require(

@@ -29,6 +29,7 @@ alwaysApply: true
 - 跑命令行工具（tar、7zz）一律走 `Shell/Subprocess.swift`（从 Kitty Tools 拷）：进程外、continuation 等结束、输出写临时文件。
 - **系统在渲染线程回调的代码必须 `nonisolated`**：`NSColor(name:dynamicProvider:)` 的取色闭包（`Style.dynamic`）、自定义 `Shape` 的 `path(in:)`、`Canvas(rendersAsynchronously: true)`；AVFoundation 逐帧处理的回调同理。
 - 禁止 `Task.detached`、`@unchecked Sendable`、`nonisolated(unsafe)`（仅 C 全局变量例外，且必须注释原因），禁止到处写 `DispatchQueue`。
+- **Vision 的同步 `perform` 不许在 Swift 并发的线程上直接调**，走 `Shell/OffPool.swift` 的 `offPool`（`DispatchQueue` 只在那一处）：macOS 27 上 Vision 里面也要用协作线程池，几路一起干等就把池子（CPU 核数个线程）占满、全卡死（2026-11-02 实测）。新加会卡着线程等系统框架的同步调用，先用 `TEST_RUNNER_LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`（池子只留 1 个线程）跑一遍相关单测，卡住就也走 `offPool`。
 
 ## 4. 风格
 - 遵循 Swift API 设计规范；`xcrun swift-format lint --strict -r macos/KittyBox` 无输出是唯一格式标准（配置 `macos/.swift-format`），提交前 `xcrun swift-format format -i -r macos/KittyBox`。

@@ -62,7 +62,7 @@ nonisolated enum AIMark {
     if let cleaned = try GeminiMark.removed(from: image) {
       return try GeminiMark.save(cleaned, like: input, source: source)
     }
-    let boxes = try locate(in: image, words: words)
+    let boxes = try await locate(in: image, words: words)
     guard !boxes.isEmpty else { throw Failure.notFound }
     guard model.isInstalled else { throw Failure.needsModel(model) }
     // 一块一块补：几块分在不同角上时一起补，裁出来的就是整张图，缩到模型边长会糊
@@ -79,10 +79,10 @@ nonisolated enum AIMark {
   /// （水印都贴边），用户加的词整张图都算。
   /// 整张认一遍，四个角再各认一遍：大图整张认时系统会先缩小，角上又小又半透明的水印字就认错了（2026-11-02 用户的
   /// 1672×2508 海报，右下角的「豆包AI生成」整张认成「昱包TAT」，只认右下角那一块就认对了；放大角块反而更差，实测）
-  static func locate(in image: CGImage, words: [String] = []) throws -> [CGRect] {
+  static func locate(in image: CGImage, words: [String] = []) async throws -> [CGRect] {
     let height = CGFloat(image.height)
     let bounds = CGRect(x: 0, y: 0, width: CGFloat(image.width), height: height)
-    let found = try (lines(in: image) + corners(of: image)).compactMap { line -> CGRect? in
+    let found = try await (lines(in: image) + corners(of: image)).compactMap { line -> CGRect? in
       let edge = line.rect.minY < height * 0.3 || line.rect.maxY > height * 0.7
       let folded = fold(line.text)
       guard
@@ -110,7 +110,7 @@ nonisolated enum AIMark {
   }
 
   /// 四个角各一块（宽一半、高四分之一，不放大）认出来的字，框换算回整张图的坐标
-  private static func corners(of image: CGImage) throws -> [(text: String, rect: CGRect)] {
+  private static func corners(of image: CGImage) async throws -> [(text: String, rect: CGRect)] {
     let (width, height) = (image.width / 2, image.height / 4)
     guard width > 0, height > 0 else { return [] }
     var found: [(text: String, rect: CGRect)] = []
@@ -119,7 +119,7 @@ nonisolated enum AIMark {
         // CGImage 裁切的坐标是左上为原点的像素，和 lines 给的框一样
         guard let corner = image.cropping(to: CGRect(x: x, y: y, width: width, height: height))
         else { continue }
-        found += try lines(in: corner).map {
+        found += try await lines(in: corner).map {
           ($0.text, $0.rect.offsetBy(dx: CGFloat(x), dy: CGFloat(y)))
         }
       }
@@ -128,24 +128,26 @@ nonisolated enum AIMark {
   }
 
   /// 系统文字识别（本机）认出来的每一行字和它的框（左上为原点的像素框，没扩过）；画笔擦除的「选文字」、
-  /// 去背景的「保留文字」也用
-  static func lines(in image: CGImage) throws -> [(text: String, rect: CGRect)] {
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.recognitionLanguages = ["zh-Hans", "en-US"]
-    request.usesLanguageCorrection = false
-    try VNImageRequestHandler(cgImage: image).perform([request])
-    let (width, height) = (CGFloat(image.width), CGFloat(image.height))
-    return (request.results ?? []).compactMap { observation in
-      guard let text = observation.topCandidates(1).first?.string else { return nil }
-      // Vision 的框：0–1、左下为原点 → 像素、左上为原点
-      let box = observation.boundingBox
-      return (
-        text,
-        CGRect(
-          x: box.minX * width, y: (1 - box.maxY) * height, width: box.width * width,
-          height: box.height * height)
-      )
+  /// 去背景的「保留文字」也用。认字在 GCD 上跑（offPool，别占着 Swift 并发的线程干等）
+  static func lines(in image: CGImage) async throws -> [(text: String, rect: CGRect)] {
+    try await offPool {
+      let request = VNRecognizeTextRequest()
+      request.recognitionLevel = .accurate
+      request.recognitionLanguages = ["zh-Hans", "en-US"]
+      request.usesLanguageCorrection = false
+      try VNImageRequestHandler(cgImage: image).perform([request])
+      let (width, height) = (CGFloat(image.width), CGFloat(image.height))
+      return (request.results ?? []).compactMap { observation in
+        guard let text = observation.topCandidates(1).first?.string else { return nil }
+        // Vision 的框：0–1、左下为原点 → 像素、左上为原点
+        let box = observation.boundingBox
+        return (
+          text,
+          CGRect(
+            x: box.minX * width, y: (1 - box.maxY) * height, width: box.width * width,
+            height: box.height * height)
+        )
+      }
     }
   }
 

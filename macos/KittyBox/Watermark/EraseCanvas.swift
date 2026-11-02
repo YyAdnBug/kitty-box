@@ -172,7 +172,7 @@ import UniformTypeIdentifiers
   }
 
   @concurrent nonisolated private static func lines(in image: CGImage) async -> [CGRect] {
-    ((try? AIMark.lines(in: image)) ?? []).map(\.rect)
+    ((try? await AIMark.lines(in: image)) ?? []).map(\.rect)
   }
 
   /// 先撤笔画，没有笔画了再退回上一次擦除（把那一块原来的像素贴回去；全撤完就是载入时那张）

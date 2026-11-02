@@ -3,6 +3,7 @@
 // App 菜单的「关于 Kitty Box」换成自己的关于窗口，下面加「检查更新…」；打开 App 10 秒后自动查一次更新（Updater）。
 // 关于窗口像系统的关于面板：不进「窗口」菜单、不能最小化、下次打开 App 不恢复，奶油底铺满（连标题栏那一条）。
 // 编辑菜单的「粘贴」换成自己的：⌘V 能把文件交给工具（Paste）；文件菜单「添加文件…」⌘O；「工具」菜单 ⌘1–⌘8 切工具；
+// 画笔擦除的「存储」⌘S（文件）、撤销 / 重做（编辑，别处照系统的发给输入框）、放大 / 缩小 / 适合窗口（显示）在菜单里（EraseCommands）；
 // 帮助菜单换成打开仓库的说明页、报告问题（没有帮助手册，系统默认那一项只会说「帮助不可用」）。
 
 import AppKit
@@ -52,6 +53,8 @@ private struct AppCommands: Commands {
   private static let readme = URL(string: "https://github.com/YyAdnBug/kitty-box#readme")!
   private static let issues = URL(string: "https://github.com/YyAdnBug/kitty-box/issues/new")!
   @Environment(\.openWindow) private var openWindow
+  /// 主窗口在前、当前是画笔擦除时才有
+  @FocusedValue(\.eraseCommands) private var erase
 
   var body: some Commands {
     // 「粘贴」换成自己的（Paste）：输入框里照常，别处 ⌘V 把剪贴板里的文件交给工具；同组的剪切、拷贝、全选照系统的发给响应链
@@ -70,6 +73,35 @@ private struct AppCommands: Commands {
         Navigator.shared.importing = true
       }
       .keyboardShortcut("o")
+    }
+    CommandGroup(after: .saveItem) {
+      Button("存储") { erase?.save?() }.keyboardShortcut("s").disabled(erase?.save == nil)
+    }
+    // 画笔擦除这一页：撤销、重做它的笔画和擦除；别处（输入框）照系统的发给响应链（窗口的撤销管理器）
+    CommandGroup(replacing: .undoRedo) {
+      Button("撤销") {
+        if let erase {
+          erase.undo?()
+        } else {
+          NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
+        }
+      }
+      .keyboardShortcut("z")
+      .disabled(erase != nil && erase?.undo == nil)
+      Button("重做") {
+        if let erase {
+          erase.redo?()
+        } else {
+          NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
+        }
+      }
+      .keyboardShortcut("z", modifiers: [.command, .shift])
+      .disabled(erase != nil && erase?.redo == nil)
+    }
+    CommandGroup(before: .toolbar) {
+      Button("放大") { erase?.zoomIn?() }.keyboardShortcut("=").disabled(erase?.zoomIn == nil)
+      Button("缩小") { erase?.zoomOut?() }.keyboardShortcut("-").disabled(erase?.zoomOut == nil)
+      Button("适合窗口") { erase?.fit?() }.keyboardShortcut("0").disabled(erase?.fit == nil)
     }
     CommandMenu("工具") {
       ForEach(Array(Tool.allCases.enumerated()), id: \.element) { index, tool in

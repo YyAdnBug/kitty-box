@@ -3,7 +3,8 @@
 // - 拖进工具页、⌘V 粘贴：交给当前工具；当前工具一个都收不了时照下面分派。
 // - 拖到程序坞图标、访达里「打开方式」：全是压缩包就解压；当前工具（打包除外）全收得了就给它；里面有图片或视频就弹出来问交给谁；
 //   别的交给打包。
-// 各工具的状态（选了什么、做到哪了）放在这里，切到别的工具再回来还在。
+// - App 自己的网址（访达扩展；别的网页、App 也能打开）：交给指明的工具，压缩包只放进解压页、不自己开始。
+// 各工具的状态（选了什么、做到哪了）放在这里，切到别的工具再回来还在；退出 App 前问有没有活在做、停下等收尾（busy、stopAll）。
 
 import AppKit
 import Observation
@@ -38,11 +39,12 @@ import SwiftUI
     tool = Tool(rawValue: defaults.string(forKey: Prefs.lastTool) ?? "") ?? .pack
   }
 
-  func open(_ tool: Tool, with urls: [URL]) {
+  /// autostart = false：压缩包只放进解压页，等用户点「开始解压」（App 自己的网址交过来的）
+  func open(_ tool: Tool, with urls: [URL], autostart: Bool = true) {
     pending = []
     switch tool {
     case .pack: pack.add(urls)
-    case .unpack: unpack.add(urls.filter(Archiver.isArchive))
+    case .unpack: unpack.add(urls.filter(Archiver.isArchive), autostart: autostart)
     case .convert: convert.add(urls)
     case .videoConvert: videoConvert.add(urls)
     case .cutout: cutout.add(urls)
@@ -81,11 +83,33 @@ import SwiftUI
     urls.contains(where: tool.accepts)
   }
 
-  /// 访达「服务」菜单指明了交给哪个工具（Services）：交给它、打开主窗口
-  func take(_ tool: Tool, _ urls: [URL]) {
-    open(tool, with: urls)
+  /// 访达「服务」菜单、App 自己的网址指明了交给哪个工具（Services）：交给它、打开主窗口。
+  /// 网址谁都能打开（网页、别的 App），只把文件放进工具页、不自己开始做：autostart = false
+  func take(_ tool: Tool, _ urls: [URL], autostart: Bool = true) {
+    open(tool, with: urls, autostart: autostart)
     openWindow?(id: KittyBoxApp.windowID)
     NSApp.activate()
+  }
+
+  /// 还在写文件的活：打包、解压、一批图 / 视频、视频台标导出（退出 App、更新前要问）。
+  /// 读一张图、画笔擦除补一笔不算：只在内存里，停了不留东西
+  var busy: Bool {
+    pack.running || unpack.running || video.isExporting
+      || [convert, videoConvert, cutout, aiMark].contains(where: \.running)
+  }
+
+  /// 退出 App 前：都停下，等各自的收尾走完再回来——子进程停掉（SIGTERM）、解了一半的「.名字 解压中」、
+  /// 打了一半的包、转了一半的视频删掉（不然 tar、7zz 在 App 退出后接着跑，半截的东西留在原文件旁边）
+  func stopAll() async {
+    // 一起喊停、一起等：不用一个收完尾再停下一个
+    await withDiscardingTaskGroup { group in
+      group.addTask { await self.pack.stopAndWait() }
+      group.addTask { await self.unpack.stopAll() }
+      group.addTask { await self.video.stopAndWait() }
+      for batch in [convert, videoConvert, cutout, aiMark] {
+        group.addTask { await batch.stopAndWait() }
+      }
+    }
   }
 
   /// 文件拖到程序坞图标、或在访达里「打开方式」选了本 App

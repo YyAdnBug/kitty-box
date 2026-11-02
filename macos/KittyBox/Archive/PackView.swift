@@ -46,13 +46,16 @@ import UniformTypeIdentifiers
     result = nil
     task = Task {
       do {
-        result = .success(
-          try await Archiver.pack(plan, options: options, to: target) { self.progress = $0 })
-        NSApp.bounceIfInBackground()
+        let url = try await ProcessInfo.processInfo.working("正在打包") {
+          try await Archiver.pack(plan, options: options, to: target) { self.progress = $0 }
+        }
+        result = .success(url)
+        NSApp.finished("已生成「\(url.lastPathComponent)」")
       } catch is CancellationError {
         result = nil
       } catch {
         result = .failure(error)
+        NSApp.finished("没打成：" + error.localizedDescription)
       }
       running = false
       progress = nil
@@ -62,6 +65,12 @@ import UniformTypeIdentifiers
 
   /// 停下来：7zz 停掉、打了一半的包删掉
   func stop() { task?.cancel() }
+
+  /// 退出 App 前：停下，等打了一半的包删掉
+  func stopAndWait() async {
+    stop()
+    await task?.value
+  }
 }
 
 struct PackView: View {
@@ -179,11 +188,12 @@ struct PackView: View {
       Text("还没选要打包的东西")
     } else if let plan = model.plan, !plan.clashes.isEmpty {
       // 不同文件夹里的同名东西：包里只放得下一个，不让打（不同于下面 Windows 不认的名字，那个照样能打）
-      Label(
-        "「\(plan.clashes.formatted(.list(type: .and)))」有同名的（在不同的文件夹里），包里只放得下一个，先移除一个",
-        systemImage: "exclamationmark.triangle.fill"
-      )
-      .foregroundStyle(.red)
+      // 只染图标：红字、橙字在浅底上对比度不够
+      Label {
+        Text("「\(plan.clashes.formatted(.list(type: .and)))」有同名的（在不同的文件夹里），包里只放得下一个，先移除一个")
+      } icon: {
+        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+      }
     } else if let plan = model.plan {
       HStack(spacing: 6) {
         Text(
@@ -192,7 +202,8 @@ struct PackView: View {
         .monospacedDigit()
         if !plan.ignored.isEmpty {
           Button("查看") { showsIgnored = true }
-            .buttonStyle(.link)
+            .textLink()
+            .accessibilityLabel("查看忽略了哪些")
             .popover(isPresented: $showsIgnored, arrowEdge: .top) {
               PathList(
                 title: "忽略了这些",
@@ -201,13 +212,14 @@ struct PackView: View {
         }
         if !plan.windowsProblems.isEmpty {
           Text("·")
-          Label(
-            "\(plan.windowsProblems.count) 个文件名 Windows 不认",
-            systemImage: "exclamationmark.triangle.fill"
-          )
-          .foregroundStyle(.orange)
+          Label {
+            Text("\(plan.windowsProblems.count) 个文件名 Windows 不认")
+          } icon: {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+          }
           Button("查看") { showsProblems = true }
-            .buttonStyle(.link)
+            .textLink()
+            .accessibilityLabel("查看 Windows 不认的文件名")
             .popover(isPresented: $showsProblems, arrowEdge: .top) {
               PathList(
                 title: "对方解压时会出错或少文件。照样能打包，要不要改名你决定。",
@@ -277,7 +289,7 @@ struct PackView: View {
         Button(allOn ? "全不勾" : "全部勾上") {
           for item in IgnoreList.developer { model.ignore.set(item.pattern, on: !allOn) }
         }
-        .buttonStyle(.link)
+        .textLink()
       }
       Hairline()
       group("我加的", model.ignore.custom, removable: true)
@@ -336,8 +348,16 @@ struct PackView: View {
             .toggleStyle(ChipToggleStyle())
             .help(IgnoreList.note(for: pattern) ?? "自己加的")
             if removable {
-              Button("删掉「\(pattern)」", systemImage: "xmark") { model.ignore.remove(pattern) }
-                .labelStyle(.iconOnly).buttonStyle(.borderless).font(.caption)
+              // 点得到的地方 22 pt 见方（× 本身只有几个点）
+              Button {
+                model.ignore.remove(pattern)
+              } label: {
+                Image(systemName: "xmark").font(.caption).frame(width: 22, height: 22)
+                  .contentShape(.rect)
+              }
+              .buttonStyle(.borderless).foregroundStyle(.secondary)
+              .accessibilityLabel("删掉「\(IgnoreList.display(pattern))」")
+              .help("删掉「\(IgnoreList.display(pattern))」")
             }
           }
         }

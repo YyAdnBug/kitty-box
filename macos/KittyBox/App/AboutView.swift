@@ -131,8 +131,13 @@ struct AboutView: View {
       case .available(let release):
         Text("有新版本 \(release.version)")
         Link("看看改了什么", destination: release.page)
+        // 有活在做、画笔擦除没存时不让点：更新先换掉 App 再退出，退出时再问「要退出吗」选了取消，
+        // 旧的还开着、包却已经换了，还有一个等它退出就重开的进程
+        let blocked = Navigator.shared.busy || Navigator.shared.erase.unsaved
         Button("更新并重新打开") { Task { await updater.install() } }
           .buttonStyle(BrandButtonStyle())
+          .disabled(blocked)
+          .help(blocked ? "做完手上的活（画笔擦除先存好）再更新" : "")
       case .installing(let release):
         if let progress = updater.progress, progress < 1 {
           ProgressView(value: progress) {

@@ -563,6 +563,19 @@ struct ArchiverTests {
     let result = try await Archiver.unpack(archive, into: into)
     #expect(result.deletingLastPathComponent().lastPathComponent == "解到这里")
     #expect(try String(contentsOf: result, encoding: .utf8) == "甲")
+    // 「打包到…」选了要打进去的那个文件、点了替换：不打，它也不进废纸篓
+    let source = box.root.appending(path: "a.txt")
+    await #expect(throws: Archiver.Failure.self) {
+      try await Archiver.pack(plan, options: .init(), to: source)
+    }
+    #expect(box.exists("a.txt"))
+    // 选的是文件夹、存到它里面那个要打进去的旧包上：同样不打，旧包不进废纸篓
+    let old = try box.file("项目/旧.zip", "旧")
+    let folderPlan = await Archiver.plan([box.root.appending(path: "项目")], rules: rules)
+    await #expect(throws: Archiver.Failure.self) {
+      try await Archiver.pack(folderPlan, options: .init(), to: old)
+    }
+    #expect(box.exists("项目/旧.zip"))
   }
 
   /// 包放不进去（文件夹只读）：说清楚是权限

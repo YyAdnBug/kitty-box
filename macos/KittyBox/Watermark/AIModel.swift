@@ -19,6 +19,7 @@ import CoreML
 import CryptoKit
 import Foundation
 import Observation
+import SwiftUI
 
 nonisolated enum AIModel: String, CaseIterable, Identifiable, Sendable {
   case fast, standard, hd, cutout
@@ -292,20 +293,28 @@ nonisolated enum AIModel: String, CaseIterable, Identifiable, Sendable {
     states[model] = .downloading(0)
     jobs[model] = Task {
       do {
-        try await model.install { fraction in
-          let percent = (fraction * 100).rounded() / 100
-          Task { @MainActor in
-            if case .downloading(let shown) = ModelDownloads.shared.state(of: model),
-              shown != percent
-            {
-              ModelDownloads.shared.states[model] = .downloading(percent)
+        try await ProcessInfo.processInfo.working("正在下载\(model.kind)") {
+          try await model.install { fraction in
+            let percent = (fraction * 100).rounded() / 100
+            Task { @MainActor in
+              if case .downloading(let shown) = ModelDownloads.shared.state(of: model),
+                shown != percent
+              {
+                ModelDownloads.shared.states[model] = .downloading(percent)
+              }
             }
           }
         }
         states[model] = .ready
+        // 几百 MB 要下好一阵：旁白念一句（不跳程序坞图标，那是给打包、解压这些活的）
+        AccessibilityNotification.Announcement("\(model.kind)「\(model.title)」下好了").post()
       } catch {
         // 取消了：回到没下（下了一半的在 install 的临时文件夹里，已经删了）
         states[model] = Task.isCancelled ? .missing : .failed(error.localizedDescription)
+        if !Task.isCancelled {
+          AccessibilityNotification.Announcement("\(model.kind)没下成：" + error.localizedDescription)
+            .post()
+        }
       }
       jobs[model] = nil
     }

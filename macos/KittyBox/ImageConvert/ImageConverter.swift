@@ -210,12 +210,6 @@ nonisolated enum ImageConverter {
     }
   }
 
-  /// 画笔擦除还在用的老写法：target 是挑好的名字，存成了就是 true。WebP、RAW 存成了旁边的 PNG 也算存成
-  /// （活儿不白做），这时真正的名字只有上面那个 save(_:like:as:) 报得出来
-  static func save(_ image: CGImage, like source: CGImageSource, to target: URL) -> Bool {
-    (try? save(image, like: source, as: target)) != nil
-  }
-
   /// 系统能写的格式（读得了的比这多：WebP、RAW、JPEG XL 只能读）
   private static let writable = Set(CGImageDestinationCopyTypeIdentifiers() as? [String] ?? [])
 

@@ -1,8 +1,10 @@
 // 跑命令行工具（从 Kitty Tools 的 Shell/Subprocess.swift 拷来，加了 directory）：在进程外、不占主线程，等它结束拿退出码和输出。
 // 解压的 tar、打包和解压的 7zz 都走这里（box-native §3：进程外 + continuation）。
 // 能边跑边看输出（watch，报进度用），调用它的任务被取消时把子进程停掉（打包、解压的「停止」）。
+// 退出码不是 0 时记一笔系统日志（哪个程序、退出码），查问题用；不记参数：7zz 的 -p 带着密码。
 
 import Foundation
+import os
 
 enum Subprocess {
   struct Result {
@@ -89,6 +91,9 @@ enum Subprocess {
         try? (handle as? FileHandle)?.close()
       }
     }
+    if status != 0 {
+      log.notice("\(URL(filePath: tool).lastPathComponent, privacy: .public) 退出码 \(status)")
+    }
     func read(_ index: Int) -> String {
       guard files.indices.contains(index), let data = try? Data(contentsOf: files[index]) else {
         return ""
@@ -97,6 +102,8 @@ enum Subprocess {
     }
     return Result(status: status, output: read(0), error: read(1))
   }
+
+  private static let log = Logger(subsystem: "com.yy.kitty-box", category: "subprocess")
 
   private static func temporaryFile() -> URL {
     FileManager.default.temporaryDirectory.appending(path: "kittybox-\(UUID().uuidString)")

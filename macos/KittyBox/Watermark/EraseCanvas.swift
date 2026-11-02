@@ -6,7 +6,8 @@
 // 「选文字」（M9，用户问「不是 AI 生成的字怎么去除」）：用系统的文字识别（AIMark.lines）把图上的字一行一行框出来，点哪行擦哪行
 // （盖住那一行的一笔，走同一条补图的路，⌘Z 照样退回）；再点一下按钮回到涂抹。
 // 撤销只记补过的那一块原来的像素（Patch），不记整张：原来每笔存一整张，24 MP 的图擦 20 笔常驻约 2 GB（实测）。
-// 擦过还没存时换图（拖进来、⌘O、⌘V、改用画笔擦除）先问一声；补的时候换了图，这一笔作废，不落到新图上。
+// 擦过还没存时换图（拖进来、⌘O、⌘V、改用画笔擦除）、退出 App 先问一声；补的时候换了图，这一笔作废，不落到新图上。
+// 存储、撤销 / 重做、缩放在菜单栏里（文件、编辑、显示，EraseCommands）：快捷键挂在菜单上，页内的按钮只管点。
 
 import AppKit
 import Observation
@@ -201,13 +202,14 @@ import UniformTypeIdentifiers
       state = .failed("原图「\(source.lastPathComponent)」不在原处了（挪走或删掉了），没存。")
       return
     }
-    let target = source.adding("-去水印").uniqued()
-    guard ImageConverter.save(image, like: input, to: target) else {
-      state = .failed("没存成「\(target.lastPathComponent)」：系统写不了这种格式，或者这个文件夹不让写。")
-      return
+    do {
+      // 系统写不了的格式（WebP、RAW…）存成旁边的 PNG：报真正存在哪
+      let saved = try ImageConverter.save(image, like: input, as: source.adding("-去水印"))
+      savedDepth = history.count
+      state = .saved(saved)
+    } catch {
+      state = .failed("没存成：" + error.localizedDescription)
     }
-    savedDepth = history.count
-    state = .saved(target)
   }
 
   @concurrent nonisolated private static func read(_ url: URL) async -> CGImage? {
@@ -296,7 +298,6 @@ struct EraseCanvas: View {
         .disabled(model.busy)
       Button("存储") { model.save() }
         .buttonStyle(BrandButtonStyle())
-        .keyboardShortcut("s")
         .help("另存成「原名-去水印」（⌘S）")
         // 存过之后没再改就灰掉：再按一次只会多出一份「-去水印 2」
         .disabled(model.busy || !model.unsaved)
@@ -329,6 +330,20 @@ struct EraseCanvas: View {
       status
     }
     .onChange(of: model.source) { zoom = 1 }
+    .focusedSceneValue(\.eraseCommands, commands)
+  }
+
+  /// 给菜单栏的命令，条件同页内的按钮；这会儿没意义的是 nil（菜单里灰掉）
+  private var commands: EraseCommands {
+    func when(_ ok: Bool, _ action: @escaping () -> Void) -> (() -> Void)? { ok ? action : nil }
+    let zooming = model.image != nil && !model.comparing
+    return EraseCommands(
+      save: when(!model.busy && model.unsaved) { model.save() },
+      undo: when(!model.busy && !(model.strokes.isEmpty && model.history.isEmpty)) { model.undo() },
+      redo: when(!model.busy && !model.undone.isEmpty) { model.redo() },
+      zoomIn: when(zooming && zoom < 8) { zoom = min(8, zoom * 1.5) },
+      zoomOut: when(zooming && zoom > 1) { zoom = max(1, zoom / 1.5) },
+      fit: when(zooming && zoom != 1) { zoom = 1 })
   }
 
   // MARK: 画布
@@ -444,11 +459,9 @@ struct EraseCanvas: View {
         .help("笔刷大一点（]）")
       Divider().frame(height: 18)
       Button("撤销", systemImage: "arrow.uturn.backward") { model.undo() }
-        .keyboardShortcut("z")
         .help("撤销（⌘Z）")
         .disabled(model.busy || (model.strokes.isEmpty && model.history.isEmpty))
       Button("重做", systemImage: "arrow.uturn.forward") { model.redo() }
-        .keyboardShortcut("z", modifiers: [.command, .shift])
         .help("重做（⇧⌘Z）")
         .disabled(model.busy || model.undone.isEmpty)
       Toggle(
@@ -470,7 +483,6 @@ struct EraseCanvas: View {
       if !model.comparing {
         Divider().frame(height: 18)
         Button("缩小", systemImage: "minus.magnifyingglass") { zoom = max(1, zoom / 1.5) }
-          .keyboardShortcut("-")
           .help("缩小（⌘-）")
           .disabled(zoom <= 1)
         Button(
@@ -481,10 +493,8 @@ struct EraseCanvas: View {
         .labelStyle(.titleOnly)
         .monospacedDigit()
         .frame(minWidth: 34)
-        .keyboardShortcut("0")
         .help("适合窗口（⌘0）")
         Button("放大", systemImage: "plus.magnifyingglass") { zoom = min(8, zoom * 1.5) }
-          .keyboardShortcut("=")
           .help("放大（⌘=）")
           .disabled(zoom >= 8)
       }
@@ -523,6 +533,21 @@ struct EraseCanvas: View {
   }
 }
 
+/// 画笔擦除给菜单栏的命令（文件 › 存储、编辑 › 撤销 / 重做、显示 › 放大 / 缩小 / 适合窗口，AppCommands 读）：
+/// 主窗口在前、当前工具是画笔擦除时才有（focusedSceneValue）；页面每画一次给一份新的，菜单跟着变灰 / 能点
+struct EraseCommands {
+  var save: (() -> Void)?
+  var undo: (() -> Void)?
+  var redo: (() -> Void)?
+  var zoomIn: (() -> Void)?
+  var zoomOut: (() -> Void)?
+  var fit: (() -> Void)?
+}
+
+extension FocusedValues {
+  @Entry var eraseCommands: EraseCommands?
+}
+
 /// 模型还没下好时页面顶上的一条（画笔擦除、AI 水印、去背景）：说要下哪个、多大，「下载」「换一个模型…」（补图模型才有），下载中是进度条
 struct ModelBanner: View {
   let choice: AIModel
@@ -558,8 +583,13 @@ struct ModelBanner: View {
       }
     case .failed(let reason):
       HStack(spacing: 10) {
-        Label(reason, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
-          .font(.callout).lineLimit(2)
+        // 只染图标：红字在浅底上对比度不够
+        Label {
+          Text(reason)
+        } icon: {
+          Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+        }
+        .font(.callout).lineLimit(2)
         Spacer()
         Button("重试") { downloads.start(choice) }
       }

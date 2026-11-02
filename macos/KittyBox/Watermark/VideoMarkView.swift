@@ -76,24 +76,36 @@ import SwiftUI
     let rects = rects
     exporting = Task {
       do {
-        let url = try await VideoDelogo.export(source, rects: rects) { fraction in
-          Task { @MainActor in
-            if case .exporting = self.state { self.state = .exporting(fraction) }
+        let url = try await ProcessInfo.processInfo.working("正在导出视频") {
+          try await VideoDelogo.export(source, rects: rects) { fraction in
+            Task { @MainActor in
+              if case .exporting = self.state { self.state = .exporting(fraction) }
+            }
           }
         }
         resultFrame = try? await VideoDelogo.firstFrame(of: url)
         comparing = resultFrame != nil
         state = .done(url)
-        NSApp.bounceIfInBackground()
+        NSApp.finished("导出好了「\(url.lastPathComponent)」")
       } catch {
         // 停下的：导了一半的文件已经删了，回到能接着框的样子
         state = Task.isCancelled ? .idle : .failed(error.localizedDescription)
+        if !Task.isCancelled { NSApp.finished("没导出成：" + error.localizedDescription) }
       }
     }
   }
 
   /// 停下正在导出的
   func stop() { exporting?.cancel() }
+
+  /// 正在导出（退出 App 前要问；读第一帧不算）
+  var isExporting: Bool { if case .exporting = state { true } else { false } }
+
+  /// 退出 App 前：停下，等导了一半的文件删掉
+  func stopAndWait() async {
+    stop()
+    await exporting?.value
+  }
 }
 
 struct VideoMarkView: View {
@@ -206,10 +218,14 @@ struct VideoMarkView: View {
       Rectangle().fill(Color.accentColor.opacity(0.18))
       Rectangle().strokeBorder(Color.accentColor, lineWidth: 1.5)
       if let remove {
-        Button("删掉这个框", systemImage: "xmark.circle.fill", action: remove)
-          .labelStyle(.iconOnly).buttonStyle(.borderless)
-          .foregroundStyle(.white, Color.accentColor)
-          .offset(x: 8, y: -8)
+        // 点得到的地方 22 pt 见方（图标本身只有十来个点），中心还在框角上
+        Button(action: remove) {
+          Image(systemName: "xmark.circle.fill").frame(width: 22, height: 22).contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.white, Color.accentColor)
+        .accessibilityLabel("删掉这个框").help("删掉这个框")
+        .offset(x: 11, y: -11)
       }
     }
     .frame(width: rect.width, height: rect.height)

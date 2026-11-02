@@ -2,6 +2,7 @@
 // 点了「跳过」那一行留着「输入密码…」。拖到程序坞图标上、⌘V 粘贴的压缩包也进这里（Navigator），直接开始。
 // 表格：压缩包、大小、状态；右键看看里面 / 在访达中显示 / 重试 / 解到… / 移除，双击还没解好的也是看看里面，⌫ 移除，空格快速查看。
 // 跳过了密码框的那一个不再自己弹出来，后面要密码的照样问；没解成的再拖进来就是重试；分卷包一整套拖进来只解第一卷。
+// 从 App 自己的网址（访达扩展「用 Kitty Box 解压」，别的网页、App 也能打开）来的不自己开始：那一行写「还没开始」，点「开始解压」才解。
 // 空着时整页是拖放区。
 
 import AppKit
@@ -12,6 +13,8 @@ import UniformTypeIdentifiers
 @Observable final class UnpackModel {
   struct Job: Identifiable {
     enum State {
+      /// 从网址来的：等用户点「开始解压」
+      case held
       case waiting
       case running
       case done(URL)
@@ -39,10 +42,10 @@ import UniformTypeIdentifiers
       }
     }
 
-    /// 没解成或在等密码：能重试、能「解到…」
+    /// 没解成、在等密码或还没开始：能重试（开始）、能「解到…」
     var canRetry: Bool {
       switch state {
-      case .failed, .needsPassword: true
+      case .held, .failed, .needsPassword: true
       default: false
       }
     }
@@ -63,16 +66,17 @@ import UniformTypeIdentifiers
     self.defaults = defaults
   }
 
-  /// 分卷包的后几卷换成第一卷（一整套只解一次）；还在排队、正在解的不再加；没解成的再拖进来就是重试；解好的再解一份
-  func add(_ urls: [URL]) {
+  /// 分卷包的后几卷换成第一卷（一整套只解一次）；还在排队、正在解的不再加；没解成的再拖进来就是重试；解好的再解一份。
+  /// autostart = false（App 自己的网址交过来的）：只放进表格、写「还没开始」，不自己解，已有的那一行也不动
+  func add(_ urls: [URL], autostart: Bool = true) {
     for url in urls.map(Archiver.firstVolume) {
       if let job = jobs.last(where: { $0.archive.path == url.path }), job.result == nil {
-        retry(job.id)
+        if autostart { retry(job.id) }
       } else {
-        jobs.append(Job(archive: url))
+        jobs.append(Job(archive: url, state: autostart ? .waiting : .held))
       }
     }
-    start()
+    if autostart { start() }
   }
 
   /// 没解成、在等密码的再解一次（解好的、正在解的、排着队的不动）；folder 是「解到…」选的文件夹
@@ -114,11 +118,27 @@ import UniformTypeIdentifiers
     if current?.id == id { current?.task.cancel() }
   }
 
+  /// 在一个接一个地解（退出 App 前要问）
+  var running: Bool { worker != nil }
+
+  /// 退出 App 前：正在解的停下、排着队的不再开始，等子进程停掉、解了一半的「.名字 解压中」删掉再回来
+  func stopAll() async {
+    worker?.cancel()
+    // 正在解的那个是另开的任务，不随 worker 一起取消
+    current?.task.cancel()
+    await worker?.value
+  }
+
   /// 一个接一个解（同时解好几个大包只会互相抢磁盘）
   private func start() {
-    guard worker == nil else { return }
+    // 没有要解的（拖到「解压」那一行的全不是压缩包）：不开工，不然旁白白念一句「解压做完了」
+    guard worker == nil,
+      jobs.contains(where: { if case .waiting = $0.state { true } else { false } })
+    else { return }
     worker = Task {
-      while let job = jobs.first(where: { if case .waiting = $0.state { true } else { false } }) {
+      while !Task.isCancelled,
+        let job = jobs.first(where: { if case .waiting = $0.state { true } else { false } })
+      {
         update(job.id) {
           $0.state = .running
           $0.progress = nil
@@ -131,7 +151,7 @@ import UniformTypeIdentifiers
         current = (job.id, task)
         let state: Job.State
         do {
-          state = .done(try await task.value)
+          state = .done(try await ProcessInfo.processInfo.working("正在解压") { try await task.value })
         } catch is CancellationError {
           state = .failed("已停止")
         } catch Archiver.Failure.needsPassword {
@@ -155,7 +175,10 @@ import UniformTypeIdentifiers
         }
       }
       worker = nil
-      NSApp.bounceIfInBackground()
+      let failed = jobs.count { if case .failed = $0.state { true } else { false } }
+      let locked = jobs.count { if case .needsPassword = $0.state { true } else { false } }
+      NSApp.finished(
+        "解压做完了" + (failed > 0 ? "，\(failed) 个没解成" : "") + (locked > 0 ? "，\(locked) 个要密码" : ""))
     }
   }
 
@@ -249,6 +272,9 @@ struct UnpackView: View {
       if ids.contains(where: { if case .running = job($0)?.state { true } else { false } }) {
         Button("停止") { for id in ids { model.stop(id) } }
       }
+      if ids.contains(where: { if case .held = job($0)?.state { true } else { false } }) {
+        Button("开始解压") { for id in ids { model.retry(id) } }
+      }
       if ids.contains(where: { job($0)?.isFinished == true && job($0)?.result == nil }) {
         Button("重试") { for id in ids { model.retry(id) } }
       }
@@ -277,7 +303,9 @@ struct UnpackView: View {
     if model.jobs.isEmpty { return "还没有压缩包" }
     let done = model.jobs.count { $0.result != nil }
     let locked = model.jobs.count { if case .needsPassword = $0.state { true } else { false } }
+    let held = model.jobs.count { if case .held = $0.state { true } else { false } }
     return "\(model.jobs.count) 个压缩包 · 已解压 \(done)" + (locked > 0 ? " · \(locked) 个要密码" : "")
+      + (held > 0 ? " · \(held) 个还没开始" : "")
   }
 
   private func job(_ id: UnpackModel.Job.ID?) -> UnpackModel.Job? {
@@ -319,6 +347,12 @@ private struct JobStatus: View {
 
   var body: some View {
     switch job.state {
+    case .held:
+      // 从网址来的不自己解（别的网页、App 也能打开那个网址）：点一下才开始
+      HStack(spacing: 8) {
+        Label("还没开始", systemImage: "pause.circle").foregroundStyle(.secondary)
+        Button("开始解压", action: retry).textLink().fixedSize()
+      }
     case .waiting:
       Label("等待中", systemImage: "clock").foregroundStyle(.secondary)
     case .running:
@@ -328,15 +362,19 @@ private struct JobStatus: View {
       DoneLine(text: "解到「\(url.lastPathComponent)」" + (job.note.map { "，" + $0 } ?? ""), url: url)
     case .needsPassword(let again):
       HStack(spacing: 8) {
-        Label(again ? "密码不对" : "要密码", systemImage: "lock.fill")
-          .foregroundStyle(again ? .red : .secondary)
-        Button("输入密码…", action: askPassword).buttonStyle(.link)
+        // 只染图标：红字在浅底上对比度不够
+        Label {
+          Text(again ? "密码不对" : "要密码").foregroundStyle(.secondary)
+        } icon: {
+          Image(systemName: "lock.fill").foregroundStyle(again ? .red : .secondary)
+        }
+        Button("输入密码…", action: askPassword).textLink()
       }
     case .failed(let reason):
       // 重试放在行里（同「输入密码…」），只用键盘也够得着
       HStack(spacing: 8) {
         FailLine(reason: reason)
-        Button("重试", action: retry).buttonStyle(.link).fixedSize()
+        Button("重试", action: retry).textLink().fixedSize()
       }
     }
   }

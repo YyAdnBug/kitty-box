@@ -209,6 +209,8 @@ struct VideoDelogoTests {
     try await makeTestVideo(at: source, firstAt: firstAt)
     let frame = try await VideoDelogo.firstFrame(of: source)
     #expect(frame.width == 160 && frame.height == 120)
+    // 视频转换表格里那一行的小图也取得出（原来在 0 秒取，空着的那半秒取不出、小图是空的）
+    #expect(await Thumbnail.firstFrame(source, maxPixel: 64) != nil)
 
     let output = try await VideoDelogo.export(
       source, rects: [CGRect(x: 118, y: 6, width: 34, height: 20)], progress: { _ in })

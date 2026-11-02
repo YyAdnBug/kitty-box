@@ -243,10 +243,10 @@ struct ImageConverterTests {
     #expect(saved.lastPathComponent == "图-去水印.png")
     let result = try #require(CGImageSourceCreateWithURL(saved as CFURL, nil))
     #expect(CGImageSourceGetType(result) as String? == "public.png")
-    // 老写法（画笔擦除）也存得下
-    #expect(ImageConverter.save(image, like: input, to: box.root.appending(path: "图-去水印.webp")))
-    #expect(
-      FileManager.default.fileExists(atPath: box.root.appending(path: "图-去水印 2.png").path))
+    // 再存一次（画笔擦除再擦再存）：不盖掉上一份，报的是真正的名字
+    let again = try ImageConverter.save(
+      image, like: input, as: box.root.appending(path: "图-去水印.webp"))
+    #expect(again.lastPathComponent == "图-去水印 2.png")
 
     let png = box.root.appending(path: "原图.png")
     write([picture(30, 20)], to: png, type: "public.png")

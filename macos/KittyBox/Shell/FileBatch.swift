@@ -124,6 +124,12 @@ import SwiftUI
   /// 停下 start 开始的那一批：正在做的取消，没开始的留着
   func stop() { runner?.cancel() }
 
+  /// 退出 App 前：停下，等正在做的收完尾（视频转换删掉转了一半的文件）
+  func stopAndWait() async {
+    stop()
+    await runner?.value
+  }
+
   private func process(
     lanes: Int,
     _ work: @escaping @Sendable (URL, @escaping @Sendable (Double) -> Void) async throws -> URL
@@ -135,39 +141,44 @@ import SwiftUI
       default: false
       }
     }.map { ($0.id, $0.source) }[...]
-    await withTaskGroup(of: (Item.ID, Result<URL, any Error>).self) { group in
-      var inFlight = 0
-      while true {
-        // 补满：最多 lanes 个一起做；整批被停下了就不再开新的
-        while inFlight < lanes, !Task.isCancelled, let (id, source) = queue.popFirst() {
-          // 开始以后被移除了：不做（不然列表里没有它，旁边却多出一个文件）
-          guard items.contains(where: { $0.id == id }) else { continue }
+    await ProcessInfo.processInfo.working("正在处理一批文件") {
+      await withTaskGroup(of: (Item.ID, Result<URL, any Error>).self) { group in
+        var inFlight = 0
+        while true {
+          // 补满：最多 lanes 个一起做；整批被停下了就不再开新的
+          while inFlight < lanes, !Task.isCancelled, let (id, source) = queue.popFirst() {
+            // 开始以后被移除了：不做（不然列表里没有它，旁边却多出一个文件）
+            guard items.contains(where: { $0.id == id }) else { continue }
+            update(id) {
+              $0.state = .running
+              $0.progress = nil
+            }
+            group.addTask {
+              let report: @Sendable (Double) -> Void = { fraction in
+                Task { @MainActor in self.update(id) { $0.progress = fraction } }
+              }
+              do { return (id, .success(try await work(source, report))) } catch {
+                return (id, .failure(error))
+              }
+            }
+            inFlight += 1
+          }
+          guard let (id, result) = await group.next() else { break }
+          inFlight -= 1
           update(id) {
-            $0.state = .running
-            $0.progress = nil
-          }
-          group.addTask {
-            let report: @Sendable (Double) -> Void = { fraction in
-              Task { @MainActor in self.update(id) { $0.progress = fraction } }
+            switch result {
+            case .success(let url): $0.state = .done(url)
+            case .failure(is CancellationError): $0.state = .failed("已停止")
+            case .failure(let error): $0.state = .failed(error.localizedDescription)
             }
-            do { return (id, .success(try await work(source, report))) } catch {
-              return (id, .failure(error))
-            }
-          }
-          inFlight += 1
-        }
-        guard let (id, result) = await group.next() else { break }
-        inFlight -= 1
-        update(id) {
-          switch result {
-          case .success(let url): $0.state = .done(url)
-          case .failure(is CancellationError): $0.state = .failed("已停止")
-          case .failure(let error): $0.state = .failed(error.localizedDescription)
           }
         }
       }
     }
-    NSApp.bounceIfInBackground()
+    let failed = items.count { if case .failed = $0.state { true } else { false } }
+    NSApp.finished(
+      Task.isCancelled
+        ? "已停止" : "做完了，\(outputs.count) 个好了" + (failed > 0 ? "，\(failed) 个没做成" : ""))
   }
 
   private func update(_ id: Item.ID, _ change: (inout Item) -> Void) {
@@ -194,8 +205,12 @@ struct BatchRow: View {
       }
       Spacer(minLength: 4)
       if removable, case .waiting = item.state {
-        Button("移除", systemImage: "xmark.circle.fill", action: remove)
-          .labelStyle(.iconOnly).buttonStyle(.borderless).foregroundStyle(.tertiary)
+        // 点得到的地方 22 pt 见方（图标本身只有十来个点）；次要色，不是第三级的淡灰
+        Button(action: remove) {
+          Image(systemName: "xmark.circle.fill").frame(width: 22, height: 22).contentShape(.rect)
+        }
+        .buttonStyle(.borderless).foregroundStyle(.secondary)
+        .accessibilityLabel("移除").help("移除")
       }
     }
     .padding(.vertical, 4)
@@ -222,7 +237,7 @@ struct BatchRow: View {
       VStack(alignment: .leading, spacing: 2) {
         FailLine(reason: reason)
         if let onFailure {
-          Button(onFailure.title) { onFailure.action(item.source) }.buttonStyle(.link)
+          Button(onFailure.title) { onFailure.action(item.source) }.textLink()
         }
       }
     }

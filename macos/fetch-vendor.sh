@@ -3,7 +3,7 @@
 # - 7-Zip 的 7zz → Vendor/7zz（官方包是 universal、没签名：只留 arm64，构建时 Xcode 的「Embed 7zz」拷进包里并签名）；
 #   它的许可证 → KittyBox/Resources/7zz-LICENSE.txt（入库，随包分发要带上）。
 # 换版本：改下面两行再跑，SHA256 和 GitHub release 页的 digest 核对一遍。
-# 画笔擦除的 LaMa 模型不随包，App 第一次用画笔擦除时自己下载（Watermark/LaMaModel.swift，版本和 SHA256 写在那里）。
+# 补图、抠图模型不随包，App 第一次用到时自己下载（Watermark/AIModel.swift，版本和 SHA256 写在那里）。
 set -euo pipefail
 M="$(cd "$(dirname "$0")" && pwd)"
 SEVENZIP_VERSION=26.05

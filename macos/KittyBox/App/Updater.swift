@@ -96,7 +96,9 @@ import os
         }
       }
       try Self.relaunch(Bundle.main.bundleURL)
-      NSApp.terminate(nil)
+      // 不在这个任务里直接退：这时手上又有活的话，AppDelegate 回「等一下」、另起任务停下收尾，
+      // 那个任务要等这一个（主队列上的）先走完才排得上，永远退不掉（2026-11-02 实测）
+      NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
     } catch {
       Self.log.error("更新失败：\(error, privacy: .public)")
       progress = nil

@@ -1,5 +1,6 @@
 // 做完 / 没做成 / 正在做的那一行字：绿勾 +「存成「x」」+ 在访达中显示；红叹号 + 原因；进度条 + 百分比 +「停止」。
-// 打包、解压、转换、去水印共用，只染图标、字用次要色。画布上的文件读不出时铺一张 LoadFailed。做完时 App 在后台，程序坞图标跳一下（bounceIfInBackground）。
+// 打包、解压、转换、去水印共用，只染图标、字用次要色。画布上的文件读不出时铺一张 LoadFailed。
+// 一件事做完 / 没做成（finished）：旁白念一句，App 在后台时程序坞图标跳一下；长活做的时候 Mac 不闲置睡眠（working）。
 
 import AppKit
 import SwiftUI
@@ -57,11 +58,23 @@ struct RunningProgress: View {
 }
 
 extension NSApplication {
-  /// 一件事做完时 App 在后台：程序坞图标跳一下（只跳一次，不一直喊）
-  func bounceIfInBackground() {
+  /// 一件事（打包、一队解压、一批文件、视频导出）做完或没做成：旁白念一句（前台也念：结果只写在状态栏，
+  /// 旁白用户不知道什么时候好、成没成）；App 在后台时程序坞图标跳一下（只跳一次，不一直喊）
+  func finished(_ message: String) {
+    AccessibilityNotification.Announcement(message).post()
     // 设置 › 通用「做完时程序坞图标跳一下」关了就不跳（没设过算开着）
     let wanted = UserDefaults.standard.object(forKey: Prefs.bounceWhenDone) as? Bool ?? true
     if wanted, !isActive { requestUserAttention(.informationalRequest) }
+  }
+}
+
+extension ProcessInfo {
+  /// 长活（打包、解压、一批文件、视频导出、下载模型）做的时候：Mac 不闲置睡眠，App 在后台也不被 App Nap 降速；body 做完就放开。
+  /// 屏幕照常熄灭（.userInitiated 只管系统睡眠）
+  func working<T>(_ reason: String, _ body: () async throws -> T) async rethrows -> T {
+    let activity = beginActivity(options: .userInitiated, reason: reason)
+    defer { endActivity(activity) }
+    return try await body()
   }
 }
 

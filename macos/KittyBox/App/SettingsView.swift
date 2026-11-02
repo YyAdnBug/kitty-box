@@ -87,7 +87,7 @@ private struct GeneralSettings: View {
             Text("右键菜单")
             Text(finderOn ? "已打开" : "没打开")
               .font(.caption)
-              .foregroundStyle(finderOn ? Color.green : Color.secondary)
+              .foregroundStyle(finderOn ? Style.positiveInk : Color.secondary)
           }
           Text(
             "选中文件右键，第一层就有「用 Kitty Box 打包、解压、转换、去水印、去背景」；文件夹空白处右键有「新建文件」。要在「系统设置 › 通用 › 登录项与扩展 › 访达」里打开 Kitty Box。"

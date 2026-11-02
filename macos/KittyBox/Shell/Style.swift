@@ -96,6 +96,9 @@ enum Style {
   static let selectedFill = dynamic(
     light: .black.withAlphaComponent(0.07), dark: .white.withAlphaComponent(0.10),
     contrast: (.black.withAlphaComponent(0.16), .white.withAlphaComponent(0.22)))
+  /// 当字用的绿（「−72%」变小了）：系统绿当字在白底上对比度只有 2.2:1，浅色换深一点的（约 5:1），深色照用系统绿
+  static let positiveInk = dynamic(
+    light: NSColor(srgbRed: 0.10, green: 0.50, blue: 0.22, alpha: 1), dark: .systemGreen)
   /// 停用时自绘控件乘的透明度
   static let disabledOpacity: Double = 0.35
   /// 悬停

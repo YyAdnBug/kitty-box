@@ -48,10 +48,14 @@ enum Paste {
         "\(year: .defaultDigits)-\(month: .twoDigits)-\(day: .twoDigits) \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)).\(minute: .twoDigits).\(second: .twoDigits)",
         timeZone: .current, calendar: .current))
     let ext = type.preferredFilenameExtension ?? "png"
-    let target = folder.appending(path: "粘贴的图片 \(stamp).\(ext)").uniqued()
+    // 挑名字和占住是一步（同一秒贴两次也不会挑中同一个、互相盖掉）
+    guard let target = try? folder.appending(path: "粘贴的图片 \(stamp).\(ext)").reserved() else {
+      return []
+    }
     do {
-      try data.write(to: target, options: .withoutOverwriting)
+      try data.write(to: target)
     } catch {
+      try? FileManager.default.removeItem(at: target)
       return []
     }
     return [target]

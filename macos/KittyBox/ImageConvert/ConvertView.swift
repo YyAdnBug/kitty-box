@@ -69,7 +69,7 @@ struct ConvertView: View {
         Button("全部在访达中显示") {
           NSWorkspace.shared.activateFileViewerSelecting(model.outputs)
         }
-        .buttonStyle(.link)
+        .textLink()
       }
     }
     .onChange(of: format) { model.resetDone() }

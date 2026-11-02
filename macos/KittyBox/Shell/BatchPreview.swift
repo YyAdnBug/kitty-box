@@ -222,7 +222,7 @@ private struct BatchCard: View {
         // 右上角已经有红叹号：字用次要色（红字在白底上看不清）
         Text(reason).foregroundStyle(.secondary)
         if let handOff {
-          Button("改用画笔擦除") { handOff(item.source) }.buttonStyle(.link)
+          Button("改用画笔擦除") { handOff(item.source) }.textLink()
         }
       }
     }

@@ -48,6 +48,8 @@ actor Inpainter {
   func erase(_ image: CGImage, in crop: CGRect, mask partMask: CGImage, using choice: AIModel)
     throws -> CGImage
   {
+    // 排在这个 actor 上等着的（AI 水印几路一起补）：整批停下了就不补，不然「停止」还要等它们一个个补完
+    try Task.checkCancellation()
     let model = try load(choice)
     let inputs = model.modelDescription.inputDescriptionsByName
     guard let imageShape = inputs["image"]?.imageConstraint,

@@ -55,7 +55,12 @@ extension Thumbnail {
     let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
     generator.appliesPreferredTrackTransform = true
     generator.maximumSize = CGSize(width: maxPixel, height: maxPixel)
-    return try? await generator.image(at: .zero).image
+    // 开头空着一段的视频（剪过的）在 0 秒取不出帧，放宽多少都不行：从有画面的地方取（同视频台标的第一帧）
+    var start = CMTime.zero
+    if let track = try? await generator.asset.loadTracks(withMediaType: .video).first {
+      start = (try? await VideoDelogo.firstShown(track)) ?? .zero
+    }
+    return try? await generator.image(at: start).image
   }
 }
 
@@ -168,7 +173,7 @@ struct SizeChangeText: View {
         let change = Double(sizes.after - sizes.before) / Double(max(sizes.before, 1))
         Text(change.formatted(.percent.precision(.fractionLength(0)).sign(strategy: .always())))
           .monospacedDigit()
-          .foregroundStyle(change < 0 ? Color.green : Color.secondary)
+          .foregroundStyle(change < 0 ? Style.positiveInk : Color.secondary)
       }
     }
     .task(id: [source, result]) {

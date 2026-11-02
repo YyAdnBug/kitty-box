@@ -27,7 +27,7 @@ GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_FILE = Config/Info.plist
 // 普通窗口 App（A1）：有程序坞图标，文件能拖上去；不设 LSUIElement
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.utilities
-INFOPLIST_KEY_NSHumanReadableCopyright = MIT License
+INFOPLIST_KEY_NSHumanReadableCopyright = Copyright © 2026 yy · MIT License
 
 // 以下从 Kitty Tools 的 Base.xcconfig 照抄（来自 Xcode 26 macOS SwiftUI App 模板的 target 层）
 ALWAYS_SEARCH_USER_PATHS = NO

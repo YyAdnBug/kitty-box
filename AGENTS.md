@@ -47,8 +47,11 @@ macos/
 # 第一次构建前：拉 7zz
 macos/fetch-vendor.sh
 
-# 构建
-xcodebuild -project macos/KittyBox.xcodeproj -scheme KittyBox build
+# 构建（不写 -destination 会提示「Using the first of multiple matching destinations」）
+xcodebuild -project macos/KittyBox.xcodeproj -scheme KittyBox -destination 'platform=macOS,arch=arm64' build
+
+# 单测（全跑；只跑一组加 -only-testing:KittyBoxTests/<Suite>）
+xcodebuild -project macos/KittyBox.xcodeproj -scheme KittyBox -destination 'platform=macOS,arch=arm64' test
 
 # 格式：lint 无输出才算通过；format 就地改写
 xcrun swift-format lint --strict -r macos/KittyBox macos/KittyBoxTests macos/KittyBoxFinder

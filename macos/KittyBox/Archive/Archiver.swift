@@ -166,6 +166,17 @@ enum Archiver {
       throw Failure.failed("「\(name)」有不止一个（在不同的文件夹里），包里只放得下一个，先移除一个。")
     }
     if let problem = passwordProblem(options) { throw Failure.failed(problem) }
+    // 「打包到…」选了要打进去的那样东西（或选中的文件夹里、要打进去的旧包）、点了替换：下面会把它挪进废纸篓，
+    // 7zz 再说找不到文件，重试还是一样
+    if let target {
+      let packed =
+        plan.items
+        + plan.groups.flatMap { group in group.files.map { group.base.appending(path: $0) } }
+      let path = target.standardizedFileURL.path
+      if packed.contains(where: { $0.standardizedFileURL.path == path }) {
+        throw Failure.failed("「\(target.lastPathComponent)」也在要打进去的东西里，换个名字或位置存包。")
+      }
+    }
     let archive =
       target
       ?? plan.base.appending(path: archiveName(for: plan.items, format: options.format)).uniqued()

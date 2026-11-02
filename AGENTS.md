@@ -6,7 +6,7 @@
 
 **Kitty Box**：纯原生 macOS 文件工具箱，Kitty 家族的一员（结构照 Kitty Tools：`~/Desktop/yy/Codes/Tauri/kitty-tools-macos`，`macos` 分支）。基本自用，只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
-- **功能**（第一版）：打包（zip / 7z，忽略清单）、解压（GBK 文件名不乱码，带密码的 zip / 7z / RAR）、图片转换（ImageIO）、视频转换、修图（去背景、AI 水印、画笔擦除、视频台标），有设置窗口（⌘,）；访达右键菜单第一层（访达扩展：「用 Kitty Box …」、文件夹空白处「新建文件」）。
+- **功能**（第一版）：打包（zip / 7z，忽略清单）、解压（GBK 文件名不乱码，带密码的 zip / 7z / RAR）、图片转换（ImageIO）、视频转换、修图（去背景、AI 水印、画笔擦除、视频台标），有设置窗口（⌘,）；访达右键菜单第一层（访达扩展：「用 Kitty Box …」、文件夹空白处「新建文件」、两处都有「用 X 打开」，App 在设置里挑）。
 - **形态**：普通窗口 App（有程序坞图标，文件能拖上去），左边侧边栏列出工具（压缩 / 转换 / 修图，品牌粉选中），右边是工具页（页头带操作和品牌粉主按钮 + 表格 + 右边一栏选项卡片 + 底下状态栏，照 Kitty Tools 设置窗），见 PLAN §2「界面」。
 - **方案**：`macos/PLAN.md` 是行为和做法的唯一来源；2026-10-30 拍板页 https://claude.ai/artifact/HtJqQ4iFqqpFnS1ZoZ5Gxw（31 项，「全部按推荐」），本地副本 `macos/build/research/plan-2026-10-30/decisions.html`（不入库）。
 - **进度**：分批做，一批一个提交，见 PLAN §5。

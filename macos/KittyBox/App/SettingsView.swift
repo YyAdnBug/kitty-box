@@ -50,7 +50,8 @@ private struct GeneralSettings: View {
 
   var body: some View {
     Form {
-      Section("外观") {
+      // 组名不再写一遍「外观」：那一行自己就叫外观
+      Section {
         Picker("外观", selection: $appearance) {
           ForEach(Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
         }
@@ -89,7 +90,7 @@ private struct GeneralSettings: View {
               .foregroundStyle(finderOn ? Color.green : Color.secondary)
           }
           Text(
-            "选中文件右键，第一层就有「用 Kitty Box 打包、解压、转换、去水印、去背景」；文件夹空白处右键有「新建文件」。要在系统设置的 登录项与扩展 › 访达 里打开 Kitty Box。"
+            "选中文件右键，第一层就有「用 Kitty Box 打包、解压、转换、去水印、去背景」；文件夹空白处右键有「新建文件」。要在「系统设置 › 通用 › 登录项与扩展 › 访达」里打开 Kitty Box。"
           )
         }
         LabeledContent {
@@ -111,7 +112,7 @@ private struct GeneralSettings: View {
           }
         } label: {
           Text("右键 › 服务")
-          Text("不打开上面的右键菜单，「服务」里也有这几项。嫌重复可以在 键盘 › 键盘快捷键 › 服务 里关掉。")
+          Text("不打开上面的右键菜单，「服务」里也有这几项。嫌重复可以在「系统设置 › 键盘 › 键盘快捷键 › 服务」里关掉。")
         }
       } header: {
         Text("访达")
@@ -194,18 +195,62 @@ private struct ModelSettings: View {
   }
 }
 
-/// 一个模型一行：选中圈（补图模型才有，choice 是 nil 就不画）、名字和说明、大小；右边下载 / 进度 / 删除
+/// 一个模型一行：选中圈（补图模型才有，choice 是 nil 就不画）、名字和说明、大小；右边下载 / 进度 / 删除。
+/// 选哪个是一个按钮（圈 + 名字说明，点整块都行）：Tab、空格、旁白都按得到（原来是整行的点按手势，只认鼠标）
 private struct ModelRow: View {
   let model: AIModel
   let choice: Binding<AIModel>?
   let downloads: ModelDownloads
+  @State private var confirmingRemove = false
 
   var body: some View {
+    HStack(spacing: 12) {
+      if let choice {
+        Button {
+          choice.wrappedValue = model
+        } label: {
+          info.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(choice.wrappedValue == model ? .isSelected : [])
+      } else {
+        info
+      }
+      switch downloads.state(of: model) {
+      case .ready:
+        Label("已下载", systemImage: "checkmark.circle.fill").labelStyle(.iconOnly)
+          .foregroundStyle(.green).help("已下载")
+        Button("删除", role: .destructive) { confirmingRemove = true }
+          .confirmationDialog(
+            "删掉「\(model.title) · \(model.name)」？", isPresented: $confirmingRemove
+          ) {
+            Button("删除", role: .destructive) { downloads.remove(model) }
+          } message: {
+            Text("再用时要重新下载（约 \(model.downloadSize.formatted(.byteCount(style: .file)))）。")
+          }
+      case .downloading(let fraction):
+        ProgressView(value: fraction).frame(width: 80)
+        Text(fraction.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
+          .foregroundStyle(.secondary)
+        Button("取消") { downloads.cancel(model) }
+      case .missing:
+        Button("下载") { downloads.start(model) }
+      case .failed(let reason):
+        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).help(reason)
+        Button("重试") { downloads.start(model) }
+      }
+    }
+    .padding(.vertical, 2)
+  }
+
+  /// 选中圈、名字和说明（撑满到右边的按钮前）
+  private var info: some View {
     HStack(spacing: 12) {
       if let choice {
         Image(systemName: choice.wrappedValue == model ? "largecircle.fill.circle" : "circle")
           .font(.system(size: 15))
           .foregroundStyle(choice.wrappedValue == model ? Style.brand : Color.secondary)
+          .accessibilityHidden(true)
       }
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 6) {
@@ -223,26 +268,6 @@ private struct ModelRow: View {
           .font(.caption).foregroundStyle(.secondary)
       }
       Spacer(minLength: 8)
-      switch downloads.state(of: model) {
-      case .ready:
-        Label("已下载", systemImage: "checkmark.circle.fill").labelStyle(.iconOnly)
-          .foregroundStyle(.green).help("已下载")
-        Button("删除") { downloads.remove(model) }
-      case .downloading(let fraction):
-        ProgressView(value: fraction).frame(width: 80)
-        Text(fraction.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
-          .foregroundStyle(.secondary)
-      case .missing:
-        Button("下载") { Task { await downloads.start(model) } }
-      case .failed(let reason):
-        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).help(reason)
-        Button("重试") { Task { await downloads.start(model) } }
-      }
     }
-    .padding(.vertical, 2)
-    .contentShape(Rectangle())
-    .onTapGesture { choice?.wrappedValue = model }
-    .accessibilityElement(children: .contain)
-    .accessibilityAddTraits(choice?.wrappedValue == model ? .isSelected : [])
   }
 }

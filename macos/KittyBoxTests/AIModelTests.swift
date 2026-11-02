@@ -1,5 +1,5 @@
 // AIModel：用本地 file:// 地址模拟下载——按 SHA256 校验、照原来的目录结构放好、进度一路报到 1；对不上就报错不放；
-// 第一个地址下不了就换下一个（Hugging Face 连不上时换镜像）。
+// 第一个地址下不了就换下一个（Hugging Face 连不上时换镜像）；取消了就停，不换。
 // zip 包用系统 tar 解开、找出 .mlpackage。
 // 真从 Hugging Face 下一遍（标准约 216 MB；快速、高清另一个测试，下载 → 校验 →（解开）→ 编译 → 放进 Application Support 再补一次）
 // 平时跳过，要验时：
@@ -85,6 +85,25 @@ struct AIModelTests {
         files, fromFirstOf: [root.appending(path: "nowhere/")], into: root.appending(path: "x")
       ) { _ in }
     }
+  }
+
+  /// 点了「取消」：停下、不换镜像再下一遍，什么都不留（原来取消不了，失败了还会换下一个地址从头下）
+  @Test func stopsWhenCancelled() async throws {
+    let root = try sandbox()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let files = try serve(in: root)
+    let package = root.appending(path: "LaMa.mlpackage")
+    let reported = Mutex(false)
+    let download = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      try await AIModel.fetch(
+        files, fromFirstOf: [root.appending(path: "nowhere/"), root.appending(path: "server/")],
+        into: package
+      ) { _ in reported.withLock { $0 = true } }
+    }
+    await #expect(throws: CancellationError.self) { try await download.value }
+    #expect(!FileManager.default.fileExists(atPath: package.path))
+    #expect(!reported.withLock { $0 })
   }
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_MODEL"] != nil))

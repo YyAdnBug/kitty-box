@@ -184,6 +184,8 @@ nonisolated enum AIModel: String, CaseIterable, Identifiable, Sendable {
     }
     let compiled = try await MLModel.compileModel(at: package)
     defer { try? fileManager.removeItem(at: compiled) }
+    // 编译停不下来：编译的时候点了「取消」，编好了也不装
+    try Task.checkCancellation()
     if fileManager.fileExists(atPath: installed.path) {
       _ = try fileManager.replaceItemAt(installed, withItemAt: compiled)
     } else {
@@ -207,7 +209,8 @@ nonisolated enum AIModel: String, CaseIterable, Identifiable, Sendable {
     return package
   }
 
-  /// 一个地址一个地址试：前一个下到一半失败（连不上、服务器报错、校验不过），清掉已经下的、进度归零，换下一个；都不行就报最后那个错
+  /// 一个地址一个地址试：前一个下到一半失败（连不上、服务器报错、校验不过），清掉已经下的、进度归零，换下一个；都不行就报最后那个错。
+  /// 用户点了「取消」就停，不再换镜像
   static func fetch(
     _ files: [File], fromFirstOf sources: [URL], into package: URL,
     progress: @escaping @Sendable (Double) -> Void
@@ -220,6 +223,7 @@ nonisolated enum AIModel: String, CaseIterable, Identifiable, Sendable {
       } catch {
         failure = error
         try? FileManager.default.removeItem(at: package)
+        try Task.checkCancellation()
         progress(0)
       }
     }
@@ -234,6 +238,7 @@ nonisolated enum AIModel: String, CaseIterable, Identifiable, Sendable {
     let total = Double(files.reduce(0) { $0 + $1.size })
     var done: Int64 = 0
     for file in files {
+      try Task.checkCancellation()
       let (before, size) = (Double(done), Double(file.size))
       let (temporary, response) = try await URLSession.shared.download(
         from: base.appending(path: file.path),
@@ -277,30 +282,37 @@ nonisolated enum AIModel: String, CaseIterable, Identifiable, Sendable {
 
   private(set) var states: [AIModel: State] = Dictionary(
     uniqueKeysWithValues: AIModel.allCases.map { ($0, $0.isInstalled ? .ready : .missing) })
+  /// 正在下的（「取消」停它）
+  @ObservationIgnored private var jobs: [AIModel: Task<Void, Never>] = [:]
 
   func state(of model: AIModel) -> State { states[model] ?? .missing }
 
-  func start(_ model: AIModel) async {
-    switch state(of: model) {
-    case .downloading, .ready: return
-    case .missing, .failed: break
-    }
+  func start(_ model: AIModel) {
+    guard jobs[model] == nil, state(of: model) != .ready else { return }
     states[model] = .downloading(0)
-    do {
-      try await model.install { fraction in
-        let percent = (fraction * 100).rounded() / 100
-        Task { @MainActor in
-          if case .downloading(let shown) = ModelDownloads.shared.state(of: model), shown != percent
-          {
-            ModelDownloads.shared.states[model] = .downloading(percent)
+    jobs[model] = Task {
+      do {
+        try await model.install { fraction in
+          let percent = (fraction * 100).rounded() / 100
+          Task { @MainActor in
+            if case .downloading(let shown) = ModelDownloads.shared.state(of: model),
+              shown != percent
+            {
+              ModelDownloads.shared.states[model] = .downloading(percent)
+            }
           }
         }
+        states[model] = .ready
+      } catch {
+        // 取消了：回到没下（下了一半的在 install 的临时文件夹里，已经删了）
+        states[model] = Task.isCancelled ? .missing : .failed(error.localizedDescription)
       }
-      states[model] = .ready
-    } catch {
-      states[model] = .failed(error.localizedDescription)
+      jobs[model] = nil
     }
   }
+
+  /// 停下正在下的（几百 MB，下错了、网慢时不用干等）
+  func cancel(_ model: AIModel) { jobs[model]?.cancel() }
 
   /// 删掉下好的（正在用的也能删，用时再下）
   func remove(_ model: AIModel) {

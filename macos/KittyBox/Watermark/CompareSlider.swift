@@ -1,6 +1,6 @@
 // 前后对比（AI 水印、画笔擦除、视频台标、去背景、图片转换共用；去背景的透明处垫棋盘格）：两张一样大的图叠在一起，中间一条竖线，线左边露原图、右边是去掉之后的；
 // 在图上任意处按下左右拖都能挪线。照常见修图工具的样子：线上一个圆把手，左上「原图」、右上「去水印后」（或去背景后、转换后）两个小标签，线挪到边上时那一侧的标签隐去。
-// 能放大看细节（M6）：捏合，或右下角的小条（缩小 / 适合 / 1:1 / 放大）；1:1 是一个原图像素对一个屏幕像素，放大后用触控板 / 滚轮挪。
+// 能放大看细节（M6）：捏合，或图下面靠右的小条（缩小 / 适合 / 1:1 / 放大）；1:1 是一个原图像素对一个屏幕像素，放大后用触控板 / 滚轮挪。
 
 import SwiftUI
 
@@ -16,32 +16,39 @@ struct CompareSlider: View {
   /// 放大倍数：1 = 整张放得下
   @State private var zoom: CGFloat = 1
   @State private var pinchStart: CGFloat?
+  /// 整张放得下时一个原图像素画多大（图下面那条缩放要用，图的那一块量出来的）
+  @State private var fitNow: CGFloat = 1
   @Environment(\.displayScale) private var displayScale
 
   var body: some View {
-    GeometryReader { geometry in
-      let image = CGSize(width: after.width, height: after.height)
-      let fit = max(
-        min(geometry.size.width / image.width, geometry.size.height / image.height), 0.01)
-      let size = CGSize(width: image.width * fit * zoom, height: image.height * fit * zoom)
-      ScrollView([.horizontal, .vertical]) {
-        pane(size)
-          .frame(minWidth: geometry.size.width, minHeight: geometry.size.height)
+    // 缩放的小条在图下面单独一行、靠右：原来浮在整块的右下角，图窄时悬在空白里、图宽时压住图的一角（AI 水印正好在那）
+    VStack(alignment: .trailing, spacing: 8) {
+      GeometryReader { geometry in
+        let image = CGSize(width: after.width, height: after.height)
+        let fit = max(
+          min(geometry.size.width / image.width, geometry.size.height / image.height), 0.01)
+        let size = CGSize(width: image.width * fit * zoom, height: image.height * fit * zoom)
+        ScrollView([.horizontal, .vertical]) {
+          pane(size)
+            .frame(minWidth: geometry.size.width, minHeight: geometry.size.height)
+        }
+        .scrollIndicators(zoom > 1 ? .automatic : .never)
+        .simultaneousGesture(
+          MagnifyGesture()
+            .onChanged { value in
+              let start = pinchStart ?? zoom
+              pinchStart = start
+              zoom = clamp(start * value.magnification, fit: fit)
+            }
+            .onEnded { _ in pinchStart = nil }
+        )
+        // 只换掉图这一块：挂在整个上面会把缩放的小条也从旁白、全键盘控制里换没
+        .accessibilityRepresentation {
+          Slider(value: $split, in: 0...1) { Text("原图露出多少") }
+        }
+        .onChange(of: fit, initial: true) { fitNow = $1 }
       }
-      .scrollIndicators(zoom > 1 ? .automatic : .never)
-      .simultaneousGesture(
-        MagnifyGesture()
-          .onChanged { value in
-            let start = pinchStart ?? zoom
-            pinchStart = start
-            zoom = clamp(start * value.magnification, fit: fit)
-          }
-          .onEnded { _ in pinchStart = nil }
-      )
-      .overlay(alignment: .bottomTrailing) { zoomBar(fit: fit).padding(10) }
-    }
-    .accessibilityRepresentation {
-      Slider(value: $split, in: 0...1) { Text("原图露出多少") }
+      zoomBar(fit: fitNow)
     }
   }
 
@@ -98,7 +105,8 @@ struct CompareSlider: View {
       Button("放大", systemImage: "plus.magnifyingglass") { zoom = clamp(zoom * 1.5, fit: fit) }
     }
     .labelStyle(.iconOnly)
-    .buttonStyle(.borderless)
+    // 系统附件栏的按钮：点得到的地方比图标大（原来无边框的小按钮只有图标那么大）
+    .buttonStyle(.accessoryBar)
     .controlSize(.small)
     .floatingBar()
   }

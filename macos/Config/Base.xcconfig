@@ -25,7 +25,9 @@ ENABLE_APP_SANDBOX = NO
 ENABLE_HARDENED_RUNTIME = YES
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_FILE = Config/Info.plist
-// 普通窗口 App（A1）：有程序坞图标，文件能拖上去；不设 LSUIElement
+// 普通窗口 App（A1）：有程序坞图标，文件能拖上去。LSUIElement 只管刚启动的那一下：正常启动 AppDelegate 马上切成普通 App；
+// 访达「直接打包」藏着开它时一直不在程序坞里露面、打完就退（2026-11-03 用户要「dock 不弹出」）
+INFOPLIST_KEY_LSUIElement = YES
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.utilities
 INFOPLIST_KEY_NSHumanReadableCopyright = Copyright © 2026 yy · MIT License
 

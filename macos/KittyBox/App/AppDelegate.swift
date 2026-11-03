@@ -4,6 +4,8 @@
 // 「新建文件 ▸ 自定义后缀…」的框也由这里弹（NewFile，扩展弹不出窗口）。
 // 退出（⌘Q、注销、「更新并重新打开」）时还有活在做：先问，要退就都停下、等半截的东西删掉再退；画笔擦除改了没存也先问。
 // 右键程序坞图标：八个工具，点了打开主窗口、切到那一个。
+// 程序坞图标（2026-11-03 用户要「直接打包 dock 不弹出」）：Info.plist 设了 LSUIElement，启动时先没有图标，正常启动马上切成普通 App；
+// 访达「直接打包」藏着开的不切，一直不在程序坞里露面，打完自己退（Navigator.packNow）；之后被打开了再切。
 
 import AppKit
 import SwiftUI
@@ -19,6 +21,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if UserDefaults.standard.string(forKey: Prefs.finderKey) == nil {
       UserDefaults.standard.set(UUID().uuidString, forKey: Prefs.finderKey)
     }
+  }
+
+  // 访达「直接打包」藏着开的（OpenConfiguration.hides，这时已经是藏着的）留着不露面；别的启动马上切成普通 App。
+  // 不等激活再切：从别处启动时不一定激活得了（命令行 open -a 就没激活，2026-11-03 实测），会留下没有程序坞图标、没有菜单栏的窗口
+  func applicationWillFinishLaunching(_ notification: Notification) {
+    if !NSApp.isHidden { NSApp.setActivationPolicy(.regular) }
+  }
+
+  // 藏着开的、打包还没完就被打开了（双击、点程序坞里固定的图标）：这时再切，打完也不退
+  func applicationWillBecomeActive(_ notification: Notification) {
+    if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
   }
 
   func application(_ application: NSApplication, open urls: [URL]) {

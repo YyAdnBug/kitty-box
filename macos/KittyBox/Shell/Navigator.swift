@@ -96,7 +96,7 @@ import SwiftUI
 
   /// 访达右键「用 Kitty Box 直接打包」（2026-11-03，用户要「右键点击后能直接打包，就类似快捷操作」）：不开窗口、不进打包页，
   /// 照打包页记着的格式、压缩级别、忽略清单，不设密码，包放在第一样东西旁边（同访达「压缩」）。
-  /// 做完程序坞图标跳一下；没打成弹框说原因
+  /// 做完程序坞图标跳一下；没打成弹框说原因。App 是为它藏着开的（还没在程序坞里露过面）就打完自己退，同访达的快速操作
   func packNow(_ urls: [URL]) {
     let id = UUID()
     // 默认值同 PackView 的 @AppStorage
@@ -105,7 +105,6 @@ import SwiftUI
       level: Archiver.Level(rawValue: defaults.string(forKey: Prefs.packLevel) ?? "") ?? .normal)
     let rules = pack.ignore.rules
     packing[id] = Task {
-      defer { packing[id] = nil }
       do {
         let plan = await Archiver.plan(urls, rules: rules)
         try Task.checkCancellation()
@@ -117,6 +116,9 @@ import SwiftUI
         }
         NSApp.finished("已生成「\(url.lastPathComponent)」")
       } catch is CancellationError {
+        // 退出 App 时停下的（stopAll）：不再喊退出
+        packing[id] = nil
+        return
       } catch {
         NSApp.finished("没打成：" + error.localizedDescription)
         let alert = NSAlert()
@@ -125,6 +127,8 @@ import SwiftUI
         NSApp.activate()
         alert.runModal()
       }
+      packing[id] = nil
+      if NSApp.activationPolicy() == .accessory, !busy { NSApp.terminate(nil) }
     }
   }
 

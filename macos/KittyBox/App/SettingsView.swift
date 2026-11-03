@@ -104,7 +104,9 @@ private struct GeneralSettings: View {
           }
         } label: {
           Text("新建文件模板")
-          Text("自带文本、Markdown、Word、Excel、PPT；往这个文件夹里放任何文件（比如带抬头的 Word），右键「新建文件」里就多一项。")
+          Text(
+            "自带文本、Markdown、Word、Excel、PPT；文件夹里另有 JSON、HTML、Python、Shell、CSV 几个例子（第一次在访达空白处右键时放进去，能改能删）。往里面放任何文件（比如带抬头的 Word），右键「新建文件」里就多一项；「自定义后缀…」能建任意后缀的空文件。"
+          )
         }
         LabeledContent {
           Button("打开键盘快捷键设置…") {

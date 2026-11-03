@@ -5,6 +5,9 @@
 // - 文件夹空白处右键：「新建文件 ▸」文本文件、Markdown、Word、Excel、PPT（模板在 Templates/，Word 用系统 textutil 转的，
 //   Excel、PPT 是手写的最小 Office Open XML），再加上「新建文件模板」文件夹里用户自己放的任何文件（放什么就能新建什么）。
 //   拷一份到这个文件夹，重名加「 2」，日期是新建的时候（不带模板的）；拷不进去（沙盒例外以外的地方、只读的盘）响一声。
+//   模板文件夹第一次用时放进 Starters/ 里的几个例子（JSON、HTML、Python、Shell、CSV），只放一次，删了不再放回来。
+//   「自定义后缀…」（用户要「新建文件添加一个自定义后缀」）：弹框问后缀，建一个空的「JSON 文件.json」；勾着「以后列在菜单里」时
+//   模板文件夹里也放一个同名的空文件，下次直接点（已经有这个后缀的模板就不再放）。
 // - 两处都有「用 X 打开」（用户要「右键进入指定应用」）：App 设置里选的那几个 App（默认只有终端），空白处打开这个文件夹，
 //   选中的打开选中的；它认不得的文件改开所在的文件夹（终端碰到文本、图片会当脚本跑）。App 列表从 App 的偏好里读。
 // 扩展必须在沙盒里：交给 App 的那几项不碰文件；新建文件要写用户的文件夹，靠 Config/Finder.entitlements 里的例外（home 和外接盘），
@@ -84,6 +87,11 @@ final class FinderMenu: FIFinderSync {
     "文本文件.txt", "Markdown.md", "Word 文档.docx", "Excel 表格.xlsx", "PPT 演示文稿.pptx",
   ]
 
+  /// 模板文件夹里先放的例子（Starters/，进包后和自带的一样平铺在 Resources 里）
+  private static let starters = [
+    "JSON 文件.json", "HTML 网页.html", "Python 脚本.py", "Shell 脚本.sh", "CSV 表格.csv",
+  ]
+
   /// 用户自己的模板：~/Library/Application Support/Kitty Box/新建文件模板（App 设置里同一个文件夹）。
   /// 沙盒里 FileManager 给的 home 是容器，这里要真的 home
   private static var userTemplates: URL {
@@ -152,6 +160,8 @@ final class FinderMenu: FIFinderSync {
     }
     templates.addItem(.separator())
     templates.addItem(
+      withTitle: "自定义后缀…", action: #selector(createCustom(_:)), keyEquivalent: "")
+    templates.addItem(
       withTitle: "添加自己的模板…", action: #selector(showTemplates(_:)), keyEquivalent: "")
     let menu = NSMenu()
     menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "").submenu = templates
@@ -161,6 +171,7 @@ final class FinderMenu: FIFinderSync {
 
   /// 随扩展的几个在前，用户放的按名字排在后面（隐藏文件不算）
   private static func templates() -> [URL] {
+    copyStarters()
     let own =
       (try? FileManager.default.contentsOfDirectory(
         at: userTemplates, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
@@ -176,13 +187,7 @@ final class FinderMenu: FIFinderSync {
       let folder = FIFinderSyncController.default().targetedURL()
     else { return }
     let template = templates[index]
-    let (stem, ext) = (template.deletingPathExtension().lastPathComponent, template.pathExtension)
-    var target = folder.appending(path: template.lastPathComponent)
-    var number = 2
-    while FileManager.default.fileExists(atPath: target.path) {
-      target = folder.appending(path: "\(stem) \(number)" + (ext.isEmpty ? "" : "." + ext))
-      number += 1
-    }
+    let target = Self.freeName(template.lastPathComponent, in: folder)
     do {
       try FileManager.default.copyItem(at: template, to: target)
     } catch {
@@ -193,6 +198,73 @@ final class FinderMenu: FIFinderSync {
     // 拷贝会带上模板的日期：新建的文件是现在建的，不然在「最近使用」、按日期排时排到老文件里
     try? FileManager.default.setAttributes(
       [.creationDate: Date.now, .modificationDate: Date.now], ofItemAtPath: target.path)
+  }
+
+  /// 弹框问后缀（记着上次填的），建一个空文件；扩展是后台进程，框是浮在最上面的，不先把自己提到前面打字会进访达
+  @objc private func createCustom(_ sender: AnyObject?) {
+    guard let folder = FIFinderSyncController.default().targetedURL() else { return }
+    let alert = NSAlert()
+    alert.messageText = "新建什么后缀的文件？"
+    alert.informativeText = "在「\(FileManager.default.displayName(atPath: folder.path))」里新建一个空文件。"
+    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+    field.stringValue = UserDefaults.standard.string(forKey: "lastSuffix") ?? ""
+    field.placeholderString = "比如 json、py、sh"
+    alert.accessoryView = field
+    alert.window.initialFirstResponder = field
+    alert.showsSuppressionButton = true
+    alert.suppressionButton?.title = "以后列在「新建文件」里"
+    alert.suppressionButton?.state = .on
+    alert.addButton(withTitle: "新建")
+    alert.addButton(withTitle: "取消")
+    NSApp.activate()
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    let suffix = field.stringValue.trimmingCharacters(
+      in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+    // 斜杠、冒号进不了文件名
+    guard !suffix.isEmpty, !suffix.contains("/"), !suffix.contains(":") else {
+      NSSound.beep()
+      return
+    }
+    UserDefaults.standard.set(suffix, forKey: "lastSuffix")
+    let name = "\(suffix.uppercased()) 文件.\(suffix)"
+    do {
+      try Data().write(to: Self.freeName(name, in: folder), options: .withoutOverwriting)
+    } catch {
+      log.error("新建文件失败：\(error, privacy: .public)")
+      NSSound.beep()
+      return
+    }
+    let known = Self.templates().contains { $0.pathExtension.lowercased() == suffix.lowercased() }
+    if alert.suppressionButton?.state == .on, !known {
+      try? FileManager.default.createDirectory(
+        at: Self.userTemplates, withIntermediateDirectories: true)
+      try? Data().write(to: Self.userTemplates.appending(path: name), options: .withoutOverwriting)
+    }
+  }
+
+  /// 这个文件夹里没人用的名字：重名加「 2」「 3」
+  private static func freeName(_ name: String, in folder: URL) -> URL {
+    let (stem, ext) = ((name as NSString).deletingPathExtension, (name as NSString).pathExtension)
+    var target = folder.appending(path: name)
+    var number = 2
+    while FileManager.default.fileExists(atPath: target.path) {
+      target = folder.appending(path: "\(stem) \(number)" + (ext.isEmpty ? "" : "." + ext))
+      number += 1
+    }
+    return target
+  }
+
+  /// 第一次用模板文件夹时放进几个例子；记在扩展自己的偏好里，只放一次（删掉的不再放回来），同名的不盖
+  private static func copyStarters() {
+    guard !UserDefaults.standard.bool(forKey: "startersCopied"),
+      (try? FileManager.default.createDirectory(
+        at: userTemplates, withIntermediateDirectories: true)) != nil
+    else { return }
+    for name in starters {
+      guard let source = Bundle.main.url(forResource: name, withExtension: nil) else { continue }
+      try? FileManager.default.copyItem(at: source, to: userTemplates.appending(path: name))
+    }
+    UserDefaults.standard.set(true, forKey: "startersCopied")
   }
 
   @objc private func showTemplates(_ sender: AnyObject?) {

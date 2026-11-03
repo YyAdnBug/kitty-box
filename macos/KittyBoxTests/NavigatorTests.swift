@@ -171,6 +171,30 @@ final class NavigatorTests {
     #expect(Services.request(from: URL(filePath: "/tmp/a.zip")) == nil)
   }
 
+  /// 「直接打包」：run= 对得上凭证才不开窗口直接打；没带、对不上、App 还没有凭证都只是放进工具页
+  @Test func finderLinkRunsOnlyWithTheKey() throws {
+    let scheme = try #require(Bundle.main.bundleIdentifier)
+    let link = { (run: String) in URL(string: "\(scheme)://open?tool=pack&file=/tmp/a\(run)")! }
+    #expect(Services.request(from: link("&run=k1"), key: "k1")?.now == true)
+    #expect(Services.request(from: link("&run=k2"), key: "k1")?.now == false)
+    #expect(Services.request(from: link(""), key: "k1")?.now == false)
+    #expect(Services.request(from: link("&run"), key: nil)?.now == false)
+  }
+
+  /// 「自定义后缀…」：扩展把文件夹交过来，后缀变成文件名
+  @Test func customSuffixLink() throws {
+    let scheme = try #require(Bundle.main.bundleIdentifier)
+    let url = try #require(URL(string: "\(scheme)://suffix?folder=/tmp/%E5%81%87%20%E6%9C%9F"))
+    #expect(NewFile.folder(from: url)?.path == "/tmp/假 期")
+    #expect(NewFile.folder(from: URL(string: "other://suffix?folder=/tmp")!) == nil)
+    #expect(NewFile.folder(from: URL(string: "\(scheme)://open?folder=/tmp")!) == nil)
+    #expect(NewFile.name(for: " .yaml ") == "YAML 文件.yaml")
+    #expect(NewFile.name(for: "tar.gz") == "TAR.GZ 文件.tar.gz")
+    #expect(NewFile.name(for: "..") == nil)
+    #expect(NewFile.name(for: "a/b") == nil)
+    #expect(NewFile.name(for: "a:b") == nil)
+  }
+
   /// 网址谁都能打开（网页、别的 App）：压缩包只放进解压页、写「还没开始」，不自己解；再来一次也不动它
   @Test func linkRequestsWaitForAClick() {
     let navigator = make(on: .convert)

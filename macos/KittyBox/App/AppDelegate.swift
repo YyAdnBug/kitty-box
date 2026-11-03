@@ -1,6 +1,7 @@
 // 收文件：拖到程序坞图标上、在访达里用「打开方式」选了 Kitty Box（Info.plist 的 CFBundleDocumentTypes 声明了能收哪些），
 // 交给 Navigator 分派；访达「服务」菜单交给 Services（启动时登记）；访达扩展用 App 自己的网址指明交给哪个工具（Services.request），
-// 网址谁都能打开，只放进工具页、不自己开始做。
+// 网址谁都能打开，只放进工具页、不自己开始做；带着对得上的凭证的「直接打包」不开窗口直接打（Navigator.packNow）；
+// 「新建文件 ▸ 自定义后缀…」的框也由这里弹（NewFile，扩展弹不出窗口）。
 // 退出（⌘Q、注销、「更新并重新打开」）时还有活在做：先问，要退就都停下、等半截的东西删掉再退；画笔擦除改了没存也先问。
 // 右键程序坞图标：八个工具，点了打开主窗口、切到那一个。
 
@@ -14,14 +15,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Appearance(rawValue: UserDefaults.standard.string(forKey: Prefs.appearance) ?? "")?.apply()
     NSApp.servicesProvider = services
     NSUpdateDynamicServices()
+    // 访达扩展的凭证（Prefs.finderKey）：没有就生成一个，以后不变
+    if UserDefaults.standard.string(forKey: Prefs.finderKey) == nil {
+      UserDefaults.standard.set(UUID().uuidString, forKey: Prefs.finderKey)
+    }
   }
 
   func application(_ application: NSApplication, open urls: [URL]) {
     let files = urls.filter(\.isFileURL)
     if !files.isEmpty { Navigator.shared.receive(files) }
-    for request in urls.compactMap(Services.request) {
-      Navigator.shared.take(request.tool, request.files, autostart: false)
+    for request in urls.compactMap({ Services.request(from: $0) }) {
+      if request.now, request.tool == .pack {
+        Navigator.shared.packNow(request.files)
+      } else {
+        Navigator.shared.take(request.tool, request.files, autostart: false)
+      }
     }
+    for folder in urls.compactMap(NewFile.folder) { NewFile.ask(in: folder) }
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

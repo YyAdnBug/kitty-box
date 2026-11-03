@@ -3,7 +3,8 @@
 // - 拖进工具页、⌘V 粘贴：交给当前工具；当前工具一个都收不了时照下面分派。
 // - 拖到程序坞图标、访达里「打开方式」：全是压缩包就解压；当前工具（打包除外）全收得了就给它；里面有图片或视频就弹出来问交给谁；
 //   别的交给打包。
-// - App 自己的网址（访达扩展；别的网页、App 也能打开）：交给指明的工具，压缩包只放进解压页、不自己开始。
+// - App 自己的网址（访达扩展；别的网页、App 也能打开）：交给指明的工具，压缩包只放进解压页、不自己开始；
+//   访达「直接打包」（带着凭证）不开窗口、不进打包页，直接打在旁边（packNow）。
 // 各工具的状态（选了什么、做到哪了）放在这里，切到别的工具再回来还在；退出 App 前问有没有活在做、停下等收尾（busy、stopAll）。
 
 import AppKit
@@ -31,6 +32,8 @@ import SwiftUI
   var importing = false
   /// MainView 出现时记下，窗口关着时收到文件用它重新打开
   @ObservationIgnored var openWindow: OpenWindowAction?
+  /// 访达「直接打包」在打的（packNow），一次右键一个
+  @ObservationIgnored private var packing: [UUID: Task<Void, Never>] = [:]
   @ObservationIgnored private let defaults: UserDefaults
 
   /// 单测、截图自检传一个临时的偏好域进来，不写用户的偏好
@@ -91,10 +94,44 @@ import SwiftUI
     NSApp.activate()
   }
 
-  /// 还在写文件的活：打包、解压、一批图 / 视频、视频台标导出（退出 App、更新前要问）。
+  /// 访达右键「用 Kitty Box 直接打包」（2026-11-03，用户要「右键点击后能直接打包，就类似快捷操作」）：不开窗口、不进打包页，
+  /// 照打包页记着的格式、压缩级别、忽略清单，不设密码，包放在第一样东西旁边（同访达「压缩」）。
+  /// 做完程序坞图标跳一下；没打成弹框说原因
+  func packNow(_ urls: [URL]) {
+    let id = UUID()
+    // 默认值同 PackView 的 @AppStorage
+    let options = Archiver.PackOptions(
+      format: Archiver.Format(rawValue: defaults.string(forKey: Prefs.packFormat) ?? "") ?? .zip,
+      level: Archiver.Level(rawValue: defaults.string(forKey: Prefs.packLevel) ?? "") ?? .normal)
+    let rules = pack.ignore.rules
+    packing[id] = Task {
+      defer { packing[id] = nil }
+      do {
+        let plan = await Archiver.plan(urls, rules: rules)
+        try Task.checkCancellation()
+        guard !plan.files.isEmpty else {
+          throw Archiver.Failure.failed("选中的东西都在忽略清单里，没有要打包的文件。")
+        }
+        let url = try await ProcessInfo.processInfo.working("正在打包") {
+          try await Archiver.pack(plan, options: options)
+        }
+        NSApp.finished("已生成「\(url.lastPathComponent)」")
+      } catch is CancellationError {
+      } catch {
+        NSApp.finished("没打成：" + error.localizedDescription)
+        let alert = NSAlert()
+        alert.messageText = "没打成包"
+        alert.informativeText = error.localizedDescription
+        NSApp.activate()
+        alert.runModal()
+      }
+    }
+  }
+
+  /// 还在写文件的活：打包（含访达直接打包）、解压、一批图 / 视频、视频台标导出（退出 App、更新前要问）。
   /// 读一张图、画笔擦除补一笔不算：只在内存里，停了不留东西
   var busy: Bool {
-    pack.running || unpack.running || video.isExporting
+    pack.running || !packing.isEmpty || unpack.running || video.isExporting
       || [convert, videoConvert, cutout, aiMark].contains(where: \.running)
   }
 
@@ -104,6 +141,12 @@ import SwiftUI
     // 一起喊停、一起等：不用一个收完尾再停下一个
     await withDiscardingTaskGroup { group in
       group.addTask { await self.pack.stopAndWait() }
+      for task in packing.values {
+        group.addTask {
+          task.cancel()
+          await task.value
+        }
+      }
       group.addTask { await self.unpack.stopAll() }
       group.addTask { await self.video.stopAndWait() }
       for batch in [convert, videoConvert, cutout, aiMark] {

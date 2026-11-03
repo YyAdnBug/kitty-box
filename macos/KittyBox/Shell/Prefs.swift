@@ -38,4 +38,9 @@ enum Prefs {
   static let unpackTrashArchive = "unpackTrashArchive"
   /// 访达右键「用 X 打开」的 App（bundle id，按加进来的顺序）；访达扩展读同一个键（FinderMenu.openWithApps）
   static let openWithApps = "openWithApps"
+  /// 访达扩展的凭证：App 启动时没有就随机生成一个；扩展从 App 的偏好里读（同 openWithApps），带在「直接打包」的网址上。
+  /// 网页、别的 App 不知道它，打不开会自己开始做的网址（Services.request）
+  static let finderKey = "finderKey"
+  /// 访达「新建文件 ▸ 自定义后缀…」上次填的后缀（NewFile）
+  static let lastSuffix = "lastSuffix"
 }

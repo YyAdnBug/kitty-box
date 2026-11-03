@@ -91,16 +91,14 @@ private struct GeneralSettings: View {
               .foregroundStyle(finderOn ? Style.positiveInk : Color.secondary)
           }
           Text(
-            "选中文件右键，第一层就有「用 Kitty Box 打包、解压、转换、去水印、去背景」；文件夹空白处右键有「新建文件」；两处都有下面选的「用 App 打开」。要在「系统设置 › 通用 › 登录项与扩展 › 访达」里打开 Kitty Box。"
+            "选中文件右键，第一层就有「用 Kitty Box 打包、直接打包、解压、转换、去水印、去背景」；文件夹空白处右键有「新建文件」；两处都有下面选的「用 App 打开」。要在「系统设置 › 通用 › 登录项与扩展 › 访达」里打开 Kitty Box。"
           )
         }
         LabeledContent {
           Button("打开模板文件夹") {
-            let folder = FileManager.default.urls(
-              for: .applicationSupportDirectory, in: .userDomainMask)[0]
-              .appending(path: "Kitty Box/新建文件模板")
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            NSWorkspace.shared.open(folder)
+            try? FileManager.default.createDirectory(
+              at: NewFile.templates, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(NewFile.templates)
           }
         } label: {
           Text("新建文件模板")

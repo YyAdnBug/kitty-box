@@ -1,6 +1,7 @@
 // 主窗口（A1、A2，2026-10-30 改成侧边栏）：左边侧边栏按「压缩」「转换」「修图」分组列出八个工具（家族色块 + 名字，还有没处理完的
 // 数一个角标；色块按组上色：棕、蓝、靛蓝一族，组里一个工具一个邻近色，Style.Family），右边是选中的工具页（ToolPage）。照 Kitty Tools 的设置窗：侧边栏不能收起（没有收起按钮），选中自己画成品牌粉；
 // 窗口工具栏什么都不放、不画底色、不显示标题，标题和操作都在各页的页头里——这样顶上一条只有侧边栏和窗口底两种颜色。
+// 侧边栏也拖不收、⌃⌘S 也不收（SidebarLock）：页头和红绿灯在同一排，收起来红绿灯就压在页头的色块上（2026-11-03 用户报）。
 // 侧栏选中自己画（SidebarRow）：AppKit 画侧栏选中会把强调色压深（品牌粉变暗红），同 Kitty Tools 关掉原生高亮
 // （NativeHighlightOff）再按系统同样的几何画一块。
 // 文件拖到侧边栏的某一项就交给那个工具；收到不知道给谁的文件时弹出来问（Navigator.pending）。
@@ -123,6 +124,7 @@ struct MainView: View {
       }
       // 标题栏是透明的（KittyBoxApp）：侧边栏顶上红绿灯那一排按住能拖窗口、双击缩放
       .overlay(alignment: .top) { Color.clear.frame(height: 28).windowDragArea() }
+      .background(SidebarLock())
       .toolbar(removing: .sidebarToggle)
       .safeAreaInset(edge: .bottom) {
         if let release = Updater.shared.available { updateCard(release) }
@@ -272,6 +274,36 @@ private struct SidebarRow: View {
     } else if isSelected {
       shape.fill(emphasized ? Style.brand : Style.selectedFill)
     }
+  }
+}
+
+/// 侧边栏收不起来：拖分隔线拖到头就停在最窄，「隐藏边栏」也不动（NSSplitViewItem.canCollapse 管这两样）。
+/// 只去掉收起按钮不够：拖过头照样收起来，各页的页头就顶到最左边、压在红绿灯下面（hiddenTitleBar，页头和红绿灯一排）。
+/// SwiftUI 每次更新（比如换工具）都把 canCollapse 改回 true，所以盯着它，一改回来就再关上。
+/// 不用 columnVisibility 收起后马上放回来：放回来时窗口会被撑宽一个侧边栏（2026-11-03 实测 1040 → 1250）。
+/// ponytail: 依赖 NavigationSplitView 由 NSSplitViewController 实现（同 NativeHighlightOff）；哪天找不到又收得起来，
+/// 那时改成收起时页头让开红绿灯
+private struct SidebarLock: NSViewRepresentable {
+  func makeNSView(context: Context) -> Probe { Probe() }
+  func updateNSView(_ view: Probe, context: Context) {}
+
+  final class Probe: NSView {
+    private var watch: NSKeyValueObservation?
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      guard watch == nil,
+        let sidebar = sequence(first: self as NSView, next: \.superview).lazy
+          .compactMap({ ($0 as? NSSplitView)?.delegate as? NSSplitViewController }).first?
+          .splitViewItems.first
+      else { return }
+      sidebar.canCollapse = false
+      watch = sidebar.observe(\.canCollapse) { item, _ in
+        if item.canCollapse { item.canCollapse = false }
+      }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
   }
 }
 

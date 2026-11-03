@@ -96,7 +96,9 @@ import SwiftUI
 
   /// 访达右键「用 Kitty Box 直接打包」（2026-11-03，用户要「右键点击后能直接打包，就类似快捷操作」）：不开窗口、不进打包页，
   /// 照打包页记着的格式、压缩级别、忽略清单，不设密码，包放在第一样东西旁边（同访达「压缩」）。
-  /// 做完程序坞图标跳一下；没打成弹框说原因。App 是为它藏着开的（还没在程序坞里露过面）就打完自己退，同访达的快速操作
+  /// 做完程序坞图标跳一下；没打成弹框说原因。App 是为它藏着开的（还没在程序坞里露过面）就打完自己退，同访达的快速操作。
+  /// 进度画在访达里正在生成的包的图标上（同下载中的文件，2026-11-03 用户问「文件过大没有进度条展示吗」），点上面的 × 停下：
+  /// 发布一个带文件位置的 Progress，访达自己画；7zz 一开始就往正式的名字里写，图标一出来就有进度（实测）
   func packNow(_ urls: [URL]) {
     let id = UUID()
     // 默认值同 PackView 的 @AppStorage
@@ -111,14 +113,25 @@ import SwiftUI
         guard !plan.files.isEmpty else {
           throw Archiver.Failure.failed("选中的东西都在忽略清单里，没有要打包的文件。")
         }
+        // 包的名字先定下来（同 Archiver.pack 自己挑的），进度才知道画在哪
+        let archive = plan.base.appending(
+          path: Archiver.archiveName(for: plan.items, format: options.format)
+        ).uniqued()
+        let shown = Progress(totalUnitCount: 1000)
+        shown.kind = .file
+        shown.fileOperationKind = .copying
+        shown.fileURL = archive
+        shown.cancellationHandler = { [task = packing[id]] in task?.cancel() }
+        shown.publish()
+        defer { shown.unpublish() }
         let url = try await ProcessInfo.processInfo.working("正在打包") {
-          try await Archiver.pack(plan, options: options)
+          try await Archiver.pack(plan, options: options, to: archive) {
+            shown.completedUnitCount = Int64($0 * 1000)
+          }
         }
         NSApp.finished("已生成「\(url.lastPathComponent)」")
       } catch is CancellationError {
-        // 退出 App 时停下的（stopAll）：不再喊退出
-        packing[id] = nil
-        return
+        // 点了图标上的 ×，或退出 App 时停下的（stopAll）：半截的包 Archiver 删了，什么都不用说
       } catch {
         NSApp.finished("没打成：" + error.localizedDescription)
         let alert = NSAlert()
@@ -128,6 +141,8 @@ import SwiftUI
         alert.runModal()
       }
       packing[id] = nil
+      // 就在这里退、不往后排：排到后面的话中间又来一个直接打包，退的时候有活，会弹「还有没做完的活」。
+      // 刚查过没有活，AppDelegate 直接回 terminateNow，不会等别的任务（Updater.install 那种卡死只在有活时）
       if NSApp.activationPolicy() == .accessory, !busy { NSApp.terminate(nil) }
     }
   }

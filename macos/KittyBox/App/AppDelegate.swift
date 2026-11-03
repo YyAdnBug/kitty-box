@@ -12,6 +12,8 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private let services = Services()
+  /// 后台弹框（NSAlert.runModalFromBackground）：这次激活不切成普通 App
+  static var askingInBackground = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     Appearance(rawValue: UserDefaults.standard.string(forKey: Prefs.appearance) ?? "")?.apply()
@@ -20,6 +22,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 访达扩展的凭证（Prefs.finderKey）：没有就生成一个，以后不变
     if UserDefaults.standard.string(forKey: Prefs.finderKey) == nil {
       UserDefaults.standard.set(UUID().uuidString, forKey: Prefs.finderKey)
+    }
+    // 藏着开的却没等来访达的活（登录时恢复了藏着的 App、登录项勾了「隐藏」）：不是为后台的活开的，切回普通 App（还藏着，点程序坞出来）。
+    // ponytail: 按时间猜，访达交来的网址都是启动后一下子就到；真遇到慢的，改成扩展带一个启动参数
+    if NSApp.activationPolicy() == .accessory {
+      Task {
+        try? await Task.sleep(for: .seconds(3))
+        if NSApp.activationPolicy() == .accessory, !Navigator.shared.busy, !Self.askingInBackground
+        {
+          NSApp.setActivationPolicy(.regular)
+        }
+      }
     }
   }
 
@@ -30,8 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   // 藏着开的、打包还没完就被打开了（双击、点程序坞里固定的图标）：这时再切，打完也不退
+  // 后台弹框（没打成包、问后缀）的那次激活不算
   func applicationWillBecomeActive(_ notification: Notification) {
-    if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+    if NSApp.activationPolicy() != .regular, !Self.askingInBackground {
+      NSApp.setActivationPolicy(.regular)
+    }
   }
 
   func application(_ application: NSApplication, open urls: [URL]) {
@@ -50,7 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     let navigator = Navigator.shared
     let busy = navigator.busy
-    if busy {
+    // 后台直接打包时（藏着开的，没有程序坞图标）不问，直接停下收尾：问了也看不见，注销、关机会卡在这里
+    if busy, NSApp.activationPolicy() != .accessory {
       let alert = NSAlert()
       alert.messageText = "还有没做完的活，要退出吗？"
       alert.informativeText = "退出会先停下来，做了一半的文件删掉，原文件不动。"
@@ -89,5 +106,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Navigator.shared.tool = tool
     Navigator.shared.openWindow?(id: KittyBoxApp.windowID)
     NSApp.activate()
+  }
+}
+
+extension NSAlert {
+  /// 弹框，App 在后台时也一样（访达直接打包没打成、问后缀；藏着开的 App 没有程序坞图标）：框照样到最前面（模态面板那一层，
+  /// 系统不让激活时也在别的窗口上面，点一下就能打字），藏着的主窗口不跟着出来，这次激活不切成普通 App。框关了退不退由调用的人定
+  @discardableResult func runModalFromBackground() -> NSApplication.ModalResponse {
+    let background = NSApp.activationPolicy() == .accessory
+    if background {
+      for window in NSApp.windows { window.orderOut(nil) }
+    }
+    AppDelegate.askingInBackground = background
+    defer { AppDelegate.askingInBackground = false }
+    NSApp.activate()
+    return runModal()
   }
 }

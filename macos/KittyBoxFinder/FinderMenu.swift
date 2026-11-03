@@ -87,6 +87,11 @@ final class FinderMenu: FIFinderSync {
     (Bundle.main.bundleIdentifier.map { ($0 as NSString).deletingPathExtension })
     ?? "com.yy.kitty-box"
 
+  /// App 开着没有：没开着的藏着开（不弹主窗口、程序坞不出图标）；开着的不藏，藏了用户正看着的窗口也没了
+  private static var appRunning: Bool {
+    !NSRunningApplication.runningApplications(withBundleIdentifier: appID).isEmpty
+  }
+
   /// App 的偏好（Finder.entitlements 的只读例外）：「用 App 打开」的列表、直接打包的凭证
   private static var appDefaults: UserDefaults? { UserDefaults(suiteName: appID) }
 
@@ -152,13 +157,14 @@ final class FinderMenu: FIFinderSync {
       + urls.map { URLQueryItem(name: "file", value: $0.path) }
     let configuration = NSWorkspace.OpenConfiguration()
     if tool == .packNow {
-      // ponytail: 键名抄的 App 的 Prefs.finderKey；App 还没开过一次时没有凭证，App 照「打包…」放进打包页
-      link.queryItems?.append(
-        URLQueryItem(name: "run", value: Self.appDefaults?.string(forKey: "finderKey")))
-      configuration.activates = false
-      // 开着的 App 不藏（藏了用户正看着的窗口也没了）
-      configuration.hides =
-        NSRunningApplication.runningApplications(withBundleIdentifier: Self.appID).isEmpty
+      // ponytail: 键名抄的 App 的 Prefs.finderKey
+      let key = Self.appDefaults?.string(forKey: "finderKey")
+      link.queryItems?.append(URLQueryItem(name: "run", value: key))
+      // 有凭证才在后台打。没有（App 还没开过一次）时 App 照「打包…」打开打包页，那就得照常开、能到前面
+      if key != nil {
+        configuration.activates = false
+        configuration.hides = !Self.appRunning
+      }
     }
     guard let url = link.url else { return }
     NSWorkspace.shared.open(url, configuration: configuration) { _, error in
@@ -229,7 +235,13 @@ final class FinderMenu: FIFinderSync {
     link.scheme = Self.appID
     link.host = "suffix"
     link.queryItems = [URLQueryItem(name: "folder", value: folder.path)]
-    if let url = link.url { NSWorkspace.shared.open(url) }
+    guard let url = link.url else { return }
+    // 照样激活（框要能直接打字），App 没开着时藏着开：程序坞不出图标、主窗口不露出来
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.hides = !Self.appRunning
+    NSWorkspace.shared.open(url, configuration: configuration) { _, error in
+      if let error { log.error("交给 App 失败：\(error, privacy: .public)") }
+    }
   }
 
   /// 这个文件夹里没人用的名字：重名加「 2」「 3」

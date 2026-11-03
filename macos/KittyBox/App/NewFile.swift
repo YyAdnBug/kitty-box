@@ -1,6 +1,7 @@
 // 访达「新建文件 ▸ 自定义后缀…」的框（2026-11-03，用户要「新建文件添加一个自定义后缀」）。框原来在访达扩展里弹，点了没反应：
 // 扩展是后台进程（BackgroundOnly），弹不出窗口。现在扩展用 App 自己的网址把文件夹交过来：<App 的 bundle id>://suffix?folder=/a，
-// App 弹框问后缀（记着上次填的），建一个空的「YAML 文件.yaml」，重名加「 2」；框关了 App 藏起来，访达回到前面。
+// App 弹框问后缀（记着上次填的），建一个空的「YAML 文件.yaml」，重名加「 2」；框关了访达回到前面（App 开着的话窗口留着，不藏）。
+// App 没开着时扩展藏着开它（同直接打包）：框照样到最前面，程序坞不出图标、藏着的主窗口不露出来，框关了就退。
 // 框里「以后列在「新建文件」里」默认勾着：模板文件夹里也放一个同名的空文件，下次直接点；已有这个后缀的模板（含自带的）就不再放。
 // 网址谁都能打开：最多弹个框，建不建要用户点。
 
@@ -25,13 +26,15 @@ enum NewFile {
     return URL(filePath: path, directoryHint: .isDirectory)
   }
 
-  /// 填的后缀 → 文件名：前后的点和空格去掉，「yaml」→「YAML 文件.yaml」；空的、带 / 或 : 的（进不了文件名）是 nil
-  static func name(for suffix: String) -> String? {
-    let suffix = suffix.trimmingCharacters(
+  /// 框里填的 → 后缀：前后的点和空格去掉（「 .tar.gz 」→「tar.gz」）；空的、带 / 或 : 的（进不了文件名）是 nil
+  static func suffix(from text: String) -> String? {
+    let suffix = text.trimmingCharacters(
       in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
-    guard !suffix.isEmpty, !suffix.contains("/"), !suffix.contains(":") else { return nil }
-    return "\(suffix.uppercased()) 文件.\(suffix)"
+    return suffix.isEmpty || suffix.contains("/") || suffix.contains(":") ? nil : suffix
   }
+
+  /// 「yaml」→「YAML 文件.yaml」
+  static func name(for suffix: String) -> String { "\(suffix.uppercased()) 文件.\(suffix)" }
 
   static func ask(in folder: URL) {
     let alert = NSAlert()
@@ -47,16 +50,24 @@ enum NewFile {
     alert.suppressionButton?.state = .on
     alert.addButton(withTitle: "新建")
     alert.addButton(withTitle: "取消")
-    NSApp.activate()
-    let answer = alert.runModal()
-    // 是在访达里点的：框关了回到访达
-    NSApp.hide(nil)
+    // 藏着开来弹框的（或正在后台直接打包）：框关了没别的活就退，有就接着藏着
+    let background = NSApp.activationPolicy() == .accessory
+    let answer = alert.runModalFromBackground()
+    defer {
+      if !background {
+        backToFinder()
+      } else if Navigator.shared.busy {
+        NSApp.hide(nil)
+      } else {
+        NSApp.terminate(nil)
+      }
+    }
     guard answer == .alertFirstButtonReturn else { return }
-    guard let name = name(for: field.stringValue) else {
+    guard let suffix = suffix(from: field.stringValue) else {
       NSSound.beep()
       return
     }
-    let suffix = (name as NSString).pathExtension
+    let name = name(for: suffix)
     UserDefaults.standard.set(suffix, forKey: Prefs.lastSuffix)
     do {
       try Data().write(to: folder.appending(path: name).uniqued(), options: .withoutOverwriting)
@@ -67,12 +78,24 @@ enum NewFile {
     let own =
       (try? FileManager.default.contentsOfDirectory(
         at: templates, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+    // 比整个后缀：「tar.gz」不算已经有了「gz」
     let known =
       builtIn.contains(suffix.lowercased())
-      || own.contains { $0.pathExtension.lowercased() == suffix.lowercased() }
+      || own.contains { $0.lastPathComponent.lowercased().hasSuffix("." + suffix.lowercased()) }
     if alert.suppressionButton?.state == .on, !known {
       try? FileManager.default.createDirectory(at: templates, withIntermediateDirectories: true)
       try? Data().write(to: templates.appending(path: name), options: .withoutOverwriting)
     }
+  }
+
+  /// 是在访达里点的：框关了访达回到前面。不藏 App（开着的话用户正看着的窗口留着），把前台让给访达
+  private static func backToFinder() {
+    guard
+      let finder = NSRunningApplication.runningApplications(
+        withBundleIdentifier: "com.apple.finder"
+      ).first
+    else { return }
+    NSApp.yieldActivation(to: finder)
+    finder.activate()
   }
 }

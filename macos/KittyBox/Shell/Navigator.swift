@@ -34,6 +34,8 @@ import SwiftUI
   @ObservationIgnored var openWindow: OpenWindowAction?
   /// 访达「直接打包」在打的（packNow），一次右键一个
   @ObservationIgnored private var packing: [UUID: Task<Void, Never>] = [:]
+  /// 它们要写的包：7zz 列完文件才建出包，两次右键差不多同时列完时只查「在不在」会挑中同一个名字
+  @ObservationIgnored private var archiving: Set<String> = []
   @ObservationIgnored private let defaults: UserDefaults
 
   /// 单测、截图自检传一个临时的偏好域进来，不写用户的偏好
@@ -96,7 +98,8 @@ import SwiftUI
 
   /// 访达右键「用 Kitty Box 直接打包」（2026-11-03，用户要「右键点击后能直接打包，就类似快捷操作」）：不开窗口、不进打包页，
   /// 照打包页记着的格式、压缩级别、忽略清单，不设密码，包放在第一样东西旁边（同访达「压缩」）。
-  /// 做完程序坞图标跳一下；没打成弹框说原因。App 是为它藏着开的（还没在程序坞里露过面）就打完自己退，同访达的快速操作。
+  /// 没打成弹框说原因；App 开着时做完程序坞图标跳一下（藏着开的没有图标：包出现在旁边、进度走完就是好了）。
+  /// App 是为它藏着开的（还没在程序坞里露过面）就打完自己退，同访达的快速操作。
   /// 进度画在访达里正在生成的包的图标上（同下载中的文件，2026-11-03 用户问「文件过大没有进度条展示吗」），点上面的 × 停下：
   /// 发布一个带文件位置的 Progress，访达自己画；7zz 一开始就往正式的名字里写，图标一出来就有进度（实测）
   func packNow(_ urls: [URL]) {
@@ -116,7 +119,9 @@ import SwiftUI
         // 包的名字先定下来（同 Archiver.pack 自己挑的），进度才知道画在哪
         let archive = plan.base.appending(
           path: Archiver.archiveName(for: plan.items, format: options.format)
-        ).uniqued()
+        ).uniqued(excluding: archiving)
+        archiving.insert(archive.path)
+        defer { archiving.remove(archive.path) }
         let shown = Progress(totalUnitCount: 1000)
         shown.kind = .file
         shown.fileOperationKind = .copying
@@ -137,8 +142,7 @@ import SwiftUI
         let alert = NSAlert()
         alert.messageText = "没打成包"
         alert.informativeText = error.localizedDescription
-        NSApp.activate()
-        alert.runModal()
+        alert.runModalFromBackground()
       }
       packing[id] = nil
       // 就在这里退、不往后排：排到后面的话中间又来一个直接打包，退的时候有活，会弹「还有没做完的活」。

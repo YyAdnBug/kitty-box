@@ -188,11 +188,13 @@ final class NavigatorTests {
     #expect(NewFile.folder(from: url)?.path == "/tmp/假 期")
     #expect(NewFile.folder(from: URL(string: "other://suffix?folder=/tmp")!) == nil)
     #expect(NewFile.folder(from: URL(string: "\(scheme)://open?folder=/tmp")!) == nil)
-    #expect(NewFile.name(for: " .yaml ") == "YAML 文件.yaml")
+    #expect(NewFile.suffix(from: " .yaml ") == "yaml")
+    #expect(NewFile.suffix(from: ".tar.gz") == "tar.gz")
+    #expect(NewFile.suffix(from: "..") == nil)
+    #expect(NewFile.suffix(from: "a/b") == nil)
+    #expect(NewFile.suffix(from: "a:b") == nil)
+    #expect(NewFile.name(for: "yaml") == "YAML 文件.yaml")
     #expect(NewFile.name(for: "tar.gz") == "TAR.GZ 文件.tar.gz")
-    #expect(NewFile.name(for: "..") == nil)
-    #expect(NewFile.name(for: "a/b") == nil)
-    #expect(NewFile.name(for: "a:b") == nil)
   }
 
   /// 网址谁都能打开（网页、别的 App）：压缩包只放进解压页、写「还没开始」，不自己解；再来一次也不动它

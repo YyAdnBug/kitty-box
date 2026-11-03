@@ -616,5 +616,10 @@ struct ArchiverTests {
     try box.file("报告 2.docx")
     #expect(taken.uniqued().lastPathComponent == "报告 3.docx")
     #expect(box.root.appending(path: "没有").uniqued().lastPathComponent == "没有")
+    // 还没建出来、但已经有人要用的名字也跳过（两个直接打包差不多同时挑名字）
+    let third = box.root.appending(path: "报告 3.docx").path
+    #expect(taken.uniqued(excluding: [third]).lastPathComponent == "报告 4.docx")
+    let planned = box.root.appending(path: "计划.zip")
+    #expect(planned.uniqued(excluding: [planned.path]).lastPathComponent == "计划 2.zip")
   }
 }

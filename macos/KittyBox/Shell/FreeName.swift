@@ -5,15 +5,18 @@
 import Foundation
 
 extension URL {
-  nonisolated func uniqued() -> URL {
+  /// taken：另外当作已经有了的路径（还没建出来、但已经有人要用的名字，Navigator.packNow）
+  nonisolated func uniqued(excluding taken: Set<String> = []) -> URL {
     let fileManager = FileManager.default
-    guard fileManager.fileExists(atPath: path) else { return self }
+    let used = { (url: URL) in fileManager.fileExists(atPath: url.path) || taken.contains(url.path)
+    }
+    guard used(self) else { return self }
     let folder = deletingLastPathComponent()
     let ext = pathExtension
     let stem = deletingPathExtension().lastPathComponent
     for number in 2... {
       let candidate = folder.appending(path: "\(stem) \(number)" + (ext.isEmpty ? "" : "." + ext))
-      if !fileManager.fileExists(atPath: candidate.path) { return candidate }
+      if !used(candidate) { return candidate }
     }
     return self
   }

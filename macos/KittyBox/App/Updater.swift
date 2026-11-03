@@ -59,6 +59,8 @@ import os
     else { return }
     Task {
       try? await Task.sleep(for: .seconds(10))
+      // 访达直接打包藏着开的（打完就退）：不为它上网查
+      guard NSApp.activationPolicy() != .accessory else { return }
       if case .idle = state { await check() }
     }
   }
